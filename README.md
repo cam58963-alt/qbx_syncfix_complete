@@ -1,0 +1,2 @@
+# qbx_syncfix_complete
+特定サーバ向けに作成情報抜けあり
