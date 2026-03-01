@@ -1,13 +1,12 @@
 -- ========================================================
--- config.lua (修正版 v2.2.0)
--- 変更点:
---  [v2.2] VirtualRoom.Structure / Camera を完全削除
---         (props/カメラ演出はFreezeEntityPosition方式に置換)
---  [v2.2] HardFix.SafeCoords を新設
---         (マップ外の固定座標、FreezeとRoutingBucket隔離で代替)
+-- config/config.lua
+-- バージョンは fxmanifest.lua の version フィールドで一元管理
 -- ========================================================
 
 Config = {}
+
+-- デバッグモード（FadeWatch等のデバッグ専用機能を有効化 ※本番はfalse）
+Config.Debug = false
 
 -- 基本コマンド設定
 Config.Commands = {
@@ -37,7 +36,8 @@ Config.Discord = {
         QuickFix  = 3447003,
         HardFix   = 15158332,
         MLOFix    = 10181046,
-        Emergency = 16776960
+        Emergency = 16776960,
+        Teleport  = 5025616
     }
 }
 
@@ -64,7 +64,7 @@ Config.Discord = {
 -- ★ 追加が必要（VirtualRoom → HardFix）
 Config.HardFix = {
     -- マップ外の安全な座標
-    SafeCoords = vector4(12000.0, 12000.0, 2000.0, 0.0),
+    SafeCoords = vec4(12000.0, 12000.0, 2000.0, 0.0),
     
     -- 滞在時間（秒）
     StayTime = 12,
@@ -81,7 +81,7 @@ Config.HardFix = {
 -- 緊急脱出設定
 Config.Emergency = {
     Enabled        = true,
-    EscapeLocation = vector4(195.17, -933.77, 30.69, 140.0),
+    EscapeLocation = vec4(200.04, -921.56, 29.50, 155.86),
 
     Restrictions = {
         BlockIfHandcuffed = true,
@@ -98,6 +98,32 @@ Config.Limits = {
     Cooldown       = 10,
     MaxUsesPerHour = 12
 }
+
+-- ========================================================
+-- Interior保護設定（座標ベース・円柱型判定）
+-- ========================================================
+-- RefreshInterior を禁止するエリアを座標+半径+高さで指定。
+-- 強盗MLO等、スクリプトが壁・ドアの状態を管理している場所に設定する。
+-- interior ID はサーバー再起動やMLO更新で変わるため、座標で判定する。
+--
+--   coords : エリア中心座標 (vec3)
+--   radius : 水平方向の判定半径 (XY平面)   デフォルト 30.0
+--   height : 垂直方向の判定幅 (中心Z ± height)  デフォルト 10.0
+--
+-- 動的ロック（強盗開始時にロック→終了時に解除）も可能:
+--   exports.qbx_syncfix_complete:LockInteriorAtCoords(vec3, radius, height)
+--   exports.qbx_syncfix_complete:UnlockInteriorAtCoords(vec3)
+--   exports.qbx_syncfix_complete:LockAllInteriors()
+--   exports.qbx_syncfix_complete:UnlockAllInteriors()
+-- ========================================================
+Config.ProtectedInteriors = {
+    { label = 'ユニオン強盗', coords = vec3(6.48, -658.91, 15.13), radius = 50.0, height = 10.0 },
+}
+
+-- ========================================================
+-- テレポート設定 → tp_config.lua に分離
+-- ========================================================
+-- ポイント定義は tp_config.lua を編集してください
 
 -- 通知メッセージ
 Config.Messages = {
@@ -124,5 +150,17 @@ Config.Messages = {
         Moving  = 'レギオンスクエアへ移動中...',
         Complete= 'レギオンスクエアに安全に到着しました',
         Blocked = 'この状況では緊急脱出を使用できません'
+    },
+    Teleport = {
+        Start    = '移動を開始します...',
+        Loading  = 'エリアデータを読み込み中...',
+        Complete = '移動が完了しました',
+        KeyHint  = '[E] %s',
+        BlockedEscorted   = 'エスコート中は移動できません',
+        BlockedHandcuffed = '手錠中は移動できません',
+        BlockedDead       = 'この状態では移動できません',
+        EscortSync        = '連行中のプレイヤーも一緒に移動します',
+        EscortSynced      = '連行者と一緒に移動しました',
+        BlockedJob         = 'この職業では使用できません'
     }
 }
