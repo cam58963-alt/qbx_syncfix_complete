@@ -24,6 +24,8 @@ local function cmdSync()
         local interior = GetInteriorAtCoords(c.x, c.y, c.z)
         if interior ~= 0 and not IsInteriorReady(interior) then
             EnsureMloLoadedAtCoords(c)
+            -- ForceStreamAt はフォーカスを残すので解除（残すと移動先が読み込まれなくなる）
+            ClearFocus()
         end
     end)
 end
@@ -35,6 +37,12 @@ local lastStrongMloFix         = 0
 local STRONG_MLOFIX_COOLDOWN   = 30000
 
 local function cmdSyncDeep()
+    -- 車両内は不可（クールダウンを消費する前に弾く）
+    if IsPedInAnyVehicle(PlayerPedId(), false) then
+        ShowNotification('強力修正', '車両から降りてから実行してください', 'error')
+        return
+    end
+
     RunFix(CheckCooldown, PerformHardFix, function(err)
         print('^1[SyncFix] performHardFix ERROR: ' .. tostring(err) .. '^7')
         HardFixFailSafe()

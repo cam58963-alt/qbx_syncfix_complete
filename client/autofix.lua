@@ -58,9 +58,85 @@ CreateThread(function()
             EnsureMloLoadedAtCoordsFast(coords)
             Wait(250)
             EnsureMloLoadedAtCoordsFast(coords)
+            -- ForceStreamAt はフォーカスを残すので解除（残すと移動先が読み込まれなくなる）
+            ClearFocus()
         end
 
         ::cont::
+    end
+end)
+
+-- ========================================================
+-- HardFix 中断からの復帰
+-- ========================================================
+-- HardFix 中に切断・クラッシュすると、マップ外の SafeCoords が保存され
+-- 次回ログイン時にそこへ出現してしまう。また処理がエラーで中断した場合も
+-- マップ外に取り残される。修正処理中でないのに SafeCoords 付近にいたら、
+-- サーバーが保存した復帰地点（なければ緊急脱出地点）へ戻す。
+local function getReturnPoint()
+    local ok, data = pcall(function() return exports.qbx_core:GetPlayerData() end)
+    local rp = ok and data and data.metadata and data.metadata.syncfix_return
+    if type(rp) == 'table' and rp.x and rp.y and rp.z then
+        return vec4(rp.x, rp.y, rp.z, rp.w or 0.0), true
+    end
+    return Config.Emergency.EscapeLocation, false
+end
+
+local function recoverFromSafeCoords()
+    local ped = PlayerPedId()
+    local dest, hasReturnPoint = getReturnPoint()
+    print(string.format('^3[SyncFix] ^7Stranded at HardFix safe coords -> recovering to %.1f, %.1f, %.1f (%s)',
+        dest.x, dest.y, dest.z, hasReturnPoint and 'saved origin' or 'escape location'))
+
+    DoScreenFadeOut(300)
+    Wait(300)
+
+    SetEntityVisible(ped, true, false)
+    SetEntityInvincible(ped, false)
+    SetPedCanRagdoll(ped, true)
+    FreezeEntityPosition(ped, true)
+
+    ClearFocus(); ClearHdArea()
+    RequestCollisionAtCoord(dest.x, dest.y, dest.z)
+    NewLoadSceneStart(dest.x, dest.y, dest.z, dest.x, dest.y, dest.z, 100.0, 0)
+
+    SetEntityCoords(ped, dest.x, dest.y, dest.z, false, false, false, true)
+    SetEntityHeading(ped, dest.w or 0.0)
+
+    local t = 0
+    while not HasCollisionLoadedAroundEntity(ped) and t < 5000 do
+        RequestCollisionAtCoord(dest.x, dest.y, dest.z)
+        Wait(100); t = t + 100
+    end
+    if IsNewLoadSceneActive() then NewLoadSceneStop() end
+
+    FreezeEntityPosition(ped, false)
+    ClearFocus()
+    DoScreenFadeIn(500)
+    ShowNotification('強力修正', '前回の修正が中断されていたため、元の場所へ戻しました', 'warning', 6000)
+
+    TriggerServerEvent('syncfix:clearReturnPoint')
+end
+
+CreateThread(function()
+    local safe    = Config.HardFix.SafeCoords
+    local safeVec = vec3(safe.x, safe.y, safe.z)
+    while true do
+        Wait(3000)
+        if not IsFixProcessing and LocalPlayer.state.isLoggedIn then
+            local ped = PlayerPedId()
+            if #(GetEntityCoords(ped) - safeVec) < 1000.0 then
+                IsFixProcessing = true
+                local ok, err = pcall(recoverFromSafeCoords)
+                if not ok then
+                    print('^1[SyncFix] HardFix recovery ERROR: ' .. tostring(err) .. '^7')
+                    FreezeEntityPosition(PlayerPedId(), false)
+                    ClearFocus()
+                    DoScreenFadeIn(500)
+                end
+                IsFixProcessing = false
+            end
+        end
     end
 end)
 

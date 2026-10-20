@@ -59,6 +59,8 @@ qbx_syncfix_complete/
 2. **Layer 2** - `SetFocusPosAndVel` によるストリーミング強制切替
 3. **Layer 3** - `RoutingBucket`（サーバー側）によるネットワークエンティティ分離
 
+※ 車両内では実行できません（降りてから実行）。実行中に切断した場合は、次回ログイン時に元の場所へ自動で戻ります。
+
 ### MLO Fix（`/mlofix`）
 インテリアデータのリフレッシュに特化した修正。MLO内部が透明になる問題を解決します。  
 ※ Interior保護中（強盗中等）はリフレッシュをスキップし、コリジョン再読込のみ実行します。
@@ -242,6 +244,7 @@ exports.qbx_syncfix_complete:IsAreaLocked(coords)     -- 任意座標で判定
 
 ## バージョン履歴
 
+- **v3.4.1** - バケット脱出の悪用穴を修正、HardFix中の切断でマップ外に出現する問題を修正、車両内HardFixを禁止、自動MLO補助後のフォーカス残りを修正
 - **v3.1.0** - テレポートモジュール追加、Interior保護機構、Discord日本語化、TP設定分離、vec統一
 - **v3.0.1** - HardFix後MLOFix誤実行修正、カメラアングル異常修正
 - **v3.0.0** - モジュール分割（client 6ファイル / server 3ファイル）、重複コード除去

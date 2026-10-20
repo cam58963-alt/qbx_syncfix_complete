@@ -5,7 +5,7 @@ lua54 'yes'
 name 'qbx_syncfix_complete'
 author 'QBX SyncFix Team'
 description 'Complete desync fix for QBX Framework (modular)'
-version '3.4.0'
+version '3.4.1'
 
 shared_scripts {
     '@ox_lib/init.lua',

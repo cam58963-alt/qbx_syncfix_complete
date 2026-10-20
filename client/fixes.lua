@@ -185,9 +185,16 @@ function PerformHardFix()
     local ped             = PlayerPedId()
     local originalCoords  = GetEntityCoords(ped)
     local originalHeading = GetEntityHeading(ped)
-    local vehicle         = GetVehiclePedIsIn(ped, false)
     local safe            = Config.HardFix.SafeCoords
     local stayTime        = Config.HardFix.StayTime
+
+    -- 車両内では実行しない
+    -- ClearPedTasksImmediately で ped が車から強制的に降ろされ、車だけがマップ外へ飛ぶ。
+    -- また RoutingBucket はプレイヤーだけを移すので、車両は元のバケットに残る。
+    if IsPedInAnyVehicle(ped, false) then
+        ShowNotification('強力修正', '車両から降りてから実行してください', 'error')
+        return
+    end
 
     TriggerServerEvent('syncfix:logUsage', 'HardFix',
         string.format('元座標: %.1f, %.1f, %.1f', originalCoords.x, originalCoords.y, originalCoords.z))
@@ -216,25 +223,16 @@ function PerformHardFix()
     SetPedCanRagdoll(ped, false)
     ClearPedTasksImmediately(ped)
 
-    if vehicle ~= 0 then
-        FreezeEntityPosition(vehicle, true)
-        SetEntityCollision(vehicle, false, false)
-        SetEntityCoords(vehicle, safe.x, safe.y, safe.z, false, false, false, false)
-        SetEntityHeading(vehicle, safe.w)
-        SetEntityCollision(vehicle, true, true)
-    else
-        SetEntityCollision(ped, false, false)
-        SetEntityCoords(ped, safe.x, safe.y, safe.z, false, false, false, false)
-        SetEntityHeading(ped, safe.w)
-        SetEntityCollision(ped, true, true)
-    end
+    SetEntityCollision(ped, false, false)
+    SetEntityCoords(ped, safe.x, safe.y, safe.z, false, false, false, false)
+    SetEntityHeading(ped, safe.w)
+    SetEntityCollision(ped, true, true)
 
     ClearPedTasksImmediately(ped)
     Wait(100)
     ClearPedTasksImmediately(ped)
 
     SetEntityVisible(ped, false, false)
-    if vehicle ~= 0 then SetEntityVisible(vehicle, false, false) end
 
     SetFocusPosAndVel(safe.x, safe.y, safe.z, 0.0, 0.0, 0.0)
     NewLoadSceneStart(safe.x, safe.y, safe.z, safe.x, safe.y, safe.z, 50.0, 0)
@@ -280,7 +278,6 @@ function PerformHardFix()
     Wait(500)
 
     SetEntityVisible(ped, true, false)
-    if vehicle ~= 0 then SetEntityVisible(vehicle, true, false) end
 
     SetEntityInvincible(ped, false)
     SetPedCanRagdoll(ped, true)
@@ -303,17 +300,13 @@ function PerformHardFix()
     Wait(1500)
 
     -- ★ 物理復帰を先に実行
-    if vehicle ~= 0 then
-        SetEntityCoords(vehicle, originalCoords.x, originalCoords.y, originalCoords.z + 0.5,
-            false, false, false, true)
-        SetEntityHeading(vehicle, originalHeading)
-        FreezeEntityPosition(vehicle, false)
-    else
-        SetEntityCoords(ped, originalCoords.x, originalCoords.y, originalCoords.z + 0.5,
-            false, false, false, true)
-        SetEntityHeading(ped, originalHeading)
-    end
+    SetEntityCoords(ped, originalCoords.x, originalCoords.y, originalCoords.z + 0.5,
+        false, false, false, true)
+    SetEntityHeading(ped, originalHeading)
     FreezeEntityPosition(ped, false)
+
+    -- 元の場所に戻れたのでサーバー側の復帰地点を削除
+    TriggerServerEvent('syncfix:clearReturnPoint')
 
     local t = 0
     while not HasCollisionLoadedAroundEntity(ped) and t < 8000 do
