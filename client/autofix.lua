@@ -69,8 +69,8 @@ end)
 -- ========================================================
 -- HardFix 中断からの復帰
 -- ========================================================
--- HardFix 中に切断・クラッシュすると、マップ外の SafeCoords が保存され
--- 次回ログイン時にそこへ出現してしまう。また処理がエラーで中断した場合も
+-- HardFix 中に切断・クラッシュすると、マップ外上空（SafeCoords, 高度2000m）が保存され
+-- 次回ログイン時にそこへ出現して落下してしまう。また処理がエラーで中断した場合も
 -- マップ外に取り残される。修正処理中でないのに SafeCoords 付近にいたら、
 -- サーバーが保存した復帰地点（なければ緊急脱出地点）へ戻す。
 local function getReturnPoint()
@@ -119,13 +119,14 @@ local function recoverFromSafeCoords()
 end
 
 CreateThread(function()
-    local safe    = Config.HardFix.SafeCoords
-    local safeVec = vec3(safe.x, safe.y, safe.z)
+    local safe   = Config.HardFix.SafeCoords
+    local safeXY = vec2(safe.x, safe.y)
     while true do
         Wait(3000)
         if not IsFixProcessing and LocalPlayer.state.isLoggedIn then
-            local ped = PlayerPedId()
-            if #(GetEntityCoords(ped) - safeVec) < 1000.0 then
+            local c = GetEntityCoords(PlayerPedId())
+            -- 上空から落下中でも検知できるよう水平距離だけで判定する
+            if #(vec2(c.x, c.y) - safeXY) < 1000.0 then
                 IsFixProcessing = true
                 local ok, err = pcall(recoverFromSafeCoords)
                 if not ok then
