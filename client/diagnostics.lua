@@ -40,6 +40,7 @@ RegisterCommand('synccheck', function()
         visibleVehicles, totalVehicles,
         totalVehicles > 0 and (visibleVehicles / totalVehicles * 100) or 0))
     print(string.format('HardFix Isolated: %s', HardFixIsolated and 'YES' or 'no'))
+    print(string.format('HardFix Waiting : %s', HardFixWaiting and 'YES' or 'no'))
     print('====================================')
 
     ShowNotification('同期診断',

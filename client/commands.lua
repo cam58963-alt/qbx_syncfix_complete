@@ -11,9 +11,23 @@ CreateThread(function()
 end)
 
 -- ========================================================
+-- HardFix 待機中は他の修正コマンドを使わせない
+-- （隔離・無敵・透明のまま別の場所へ移動してしまうため）
+-- ========================================================
+local function blockIfHardFixWaiting()
+    if HardFixWaiting then
+        ShowNotification('強力修正',
+            string.format(Config.Messages.Hard.BlockedWhileWaiting, Config.Commands.HardFix), 'error')
+        return true
+    end
+    return false
+end
+
+-- ========================================================
 -- /sync（軽量修正）
 -- ========================================================
 local function cmdSync()
+    if blockIfHardFixWaiting() then return end
     RunFix(CheckCooldown, PerformQuickFix, function(err)
         print('^1[SyncFix] performQuickFix ERROR: ' .. tostring(err) .. '^7')
         ClearFocus(); DoScreenFadeIn(600)
@@ -24,56 +38,85 @@ local function cmdSync()
         local interior = GetInteriorAtCoords(c.x, c.y, c.z)
         if interior ~= 0 and not IsInteriorReady(interior) then
             EnsureMloLoadedAtCoords(c)
+            -- ForceStreamAt はフォーカスを残すので解除（残すと移動先が読み込まれなくなる）
+            ClearFocus()
         end
     end)
 end
 
 -- ========================================================
--- /syncdeep（徹底修正 = HardFix + MLOFix 追撃）
+-- /syncdeep（徹底修正・2回使う方式）
+--   1回目: 待機場所へ移動し、元の場所を記録
+--   2回目: 元の場所へ戻り、記録を削除（+ 必要なら MLOFix 追撃）
 -- ========================================================
 local lastStrongMloFix         = 0
 local STRONG_MLOFIX_COOLDOWN   = 30000
 
+local function hardFixError(err)
+    print('^1[SyncFix] HardFix ERROR: ' .. tostring(err) .. '^7')
+    HardFixFailSafe()
+    ShowNotification('エラー', '徹底同期修正中にエラーが発生しました', 'error')
+end
+
+-- 元の場所に戻ったあと、室内が未ロードなら MLOFix で追撃
+local function mloFixAfterReturn()
+    local ped = PlayerPedId()
+    if IsPedInAnyVehicle(ped, false) then return end
+
+    local c = GetEntityCoords(ped)
+    -- 待機場所（マップ外）にまだいる場合はスキップ
+    if math.abs(c.x) > 5000.0 or math.abs(c.y) > 5000.0 or c.z > 1500.0 then
+        print('^3[SyncFix] SyncDeep: still at safe coords, skipping MLOFix^7')
+        return
+    end
+
+    local interior = GetInteriorAtCoords(c.x, c.y, c.z)
+    if interior == 0 or IsInteriorReady(interior) then return end
+
+    local now = GetGameTimer()
+    if (now - lastStrongMloFix) < STRONG_MLOFIX_COOLDOWN then return end
+    lastStrongMloFix = now
+
+    Wait(700)
+    ShowNotification('SyncDeep', '室内(MLO)の復旧を実行中…', 'info', 2500)
+    pcall(PerformMLOFix)
+end
+
+-- 元の場所へ戻す（2回目のコマンド・上限時間・サーバーのタイムアウトから呼ぶ）
+-- 戻る操作はクールダウン・回数制限の対象外
+function StartHardFixReturn(reason)
+    if not HardFixWaiting then return end
+    print(string.format('^2[SyncFix] ^7HardFix return (%s)', reason or 'unknown'))
+    RunFix(nil, PerformHardFixReturn, hardFixError, mloFixAfterReturn)
+end
+
 local function cmdSyncDeep()
-    RunFix(CheckCooldown, PerformHardFix, function(err)
-        print('^1[SyncFix] performHardFix ERROR: ' .. tostring(err) .. '^7')
-        HardFixFailSafe()
-        ShowNotification('エラー', '徹底同期修正中にエラーが発生しました', 'error')
-    end, function()
-        if IsPedInAnyVehicle(PlayerPedId(), false) then return end
-
-        -- ★ バグ修正: 元座標に復帰済みか確認してからMLOFix追撃
-        -- HardFix完了後、pedが正常なマップ内座標にいることを確認
-        local ped = PlayerPedId()
-        local c   = GetEntityCoords(ped)
-
-        -- 安全座標（マップ外）にまだいる場合はMLOFixをスキップ
-        if math.abs(c.x) > 5000.0 or math.abs(c.y) > 5000.0 or c.z > 1500.0 then
-            print('^3[SyncFix] SyncDeep onSuccess: still at safe coords, skipping MLOFix^7')
+    -- 2回目: 元の場所へ戻る
+    if HardFixWaiting then
+        local remain = GetHardFixMinStayRemaining()
+        if remain > 0 then
+            ShowNotification('強力修正', string.format(Config.Messages.Hard.MinStayWait, remain), 'error')
             return
         end
+        StartHardFixReturn('command')
+        return
+    end
 
-        -- 屋外（interior=0）ならMLOFixは不要
-        local interior = GetInteriorAtCoords(c.x, c.y, c.z)
-        if interior == 0 then return end
+    -- 1回目: 待機場所へ移動
+    -- 車両内は不可（クールダウンを消費する前に弾く）
+    if IsPedInAnyVehicle(PlayerPedId(), false) then
+        ShowNotification('強力修正', '車両から降りてから実行してください', 'error')
+        return
+    end
 
-        -- interiorが既にreadyならMLOFixは不要
-        if IsInteriorReady(interior) then return end
-
-        local now = GetGameTimer()
-        if (now - lastStrongMloFix) < STRONG_MLOFIX_COOLDOWN then return end
-        lastStrongMloFix = now
-
-        Wait(700)
-        ShowNotification('SyncDeep', '室内(MLO)の復旧を実行中…', 'info', 2500)
-        pcall(PerformMLOFix)
-    end)
+    RunFix(CheckCooldown, PerformHardFixEnter, hardFixError)
 end
 
 -- ========================================================
 -- /mlofix（隠しコマンド）
 -- ========================================================
 local function cmdMloFix()
+    if blockIfHardFixWaiting() then return end
     RunFix(CheckCooldown, PerformMLOFix, function(err)
         print('^1[SyncFix] performMLOFix ERROR: ' .. tostring(err) .. '^7')
         ClearFocus(); DoScreenFadeIn(300)
@@ -85,6 +128,7 @@ end
 -- /escape（緊急脱出）
 -- ========================================================
 local function cmdEscape()
+    if blockIfHardFixWaiting() then return end
     if IsFixProcessing then
         ShowNotification('処理中', '修正処理を実行中です', 'error')
         return
@@ -127,7 +171,7 @@ RegisterCommand('hardfix',     cmdSyncDeep, false)
 CreateThread(function()
     Wait(2000)
     TriggerEvent('chat:addSuggestion', '/' .. Config.Commands.QuickFix,  '軽量な同期修正（NPC/プレイヤー/描画の軽症向け）')
-    TriggerEvent('chat:addSuggestion', '/' .. Config.Commands.HardFix,   '徹底同期修正（MLO透明化など重症向け）')
+    TriggerEvent('chat:addSuggestion', '/' .. Config.Commands.HardFix,   '徹底同期修正（1回目で待機場所へ、2回目で元の場所へ戻る）')
     TriggerEvent('chat:addSuggestion', '/' .. Config.Commands.Emergency, '緊急脱出（レギオンスクエアへ移動）')
 end)
 

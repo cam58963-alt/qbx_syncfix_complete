@@ -58,9 +58,82 @@ CreateThread(function()
             EnsureMloLoadedAtCoordsFast(coords)
             Wait(250)
             EnsureMloLoadedAtCoordsFast(coords)
+            -- ForceStreamAt はフォーカスを残すので解除（残すと移動先が読み込まれなくなる）
+            ClearFocus()
         end
 
         ::cont::
+    end
+end)
+
+-- ========================================================
+-- HardFix 中断からの復帰
+-- ========================================================
+-- HardFix の待機中に切断・クラッシュすると、マップ外上空（SafeCoords, 高度2000m）が保存され
+-- 次回ログイン時にそこへ出現して落下してしまう。またエラーやリソース再起動で
+-- 待機状態が消えた場合も取り残される。待機中でも修正処理中でもないのに
+-- SafeCoords 付近にいたら、サーバーが記録した元の場所（なければ緊急脱出地点）へ戻す。
+local function recoverFromSafeCoords()
+    local ped  = PlayerPedId()
+    local dest = GetSavedReturnPoint()
+    local hasReturnPoint = dest ~= nil
+    dest = dest or Config.Emergency.EscapeLocation
+
+    -- サーバー側でまだ隔離中なら元のバケットへ戻す（隔離していなければ何もしない）
+    TriggerServerEvent('syncfix:releaseHardFixIsolation')
+    print(string.format('^3[SyncFix] ^7Stranded at HardFix safe coords -> recovering to %.1f, %.1f, %.1f (%s)',
+        dest.x, dest.y, dest.z, hasReturnPoint and 'saved origin' or 'escape location'))
+
+    DoScreenFadeOut(300)
+    Wait(300)
+
+    SetEntityVisible(ped, true, false)
+    SetEntityInvincible(ped, false)
+    SetPedCanRagdoll(ped, true)
+    FreezeEntityPosition(ped, true)
+
+    ClearFocus(); ClearHdArea()
+    RequestCollisionAtCoord(dest.x, dest.y, dest.z)
+    NewLoadSceneStart(dest.x, dest.y, dest.z, dest.x, dest.y, dest.z, 100.0, 0)
+
+    SetEntityCoords(ped, dest.x, dest.y, dest.z, false, false, false, true)
+    SetEntityHeading(ped, dest.w or 0.0)
+
+    local t = 0
+    while not HasCollisionLoadedAroundEntity(ped) and t < 5000 do
+        RequestCollisionAtCoord(dest.x, dest.y, dest.z)
+        Wait(100); t = t + 100
+    end
+    if IsNewLoadSceneActive() then NewLoadSceneStop() end
+
+    FreezeEntityPosition(ped, false)
+    ClearFocus()
+    DoScreenFadeIn(500)
+    ShowNotification('強力修正', '前回の修正が中断されていたため、元の場所へ戻しました', 'warning', 6000)
+
+    TriggerServerEvent('syncfix:clearReturnPoint')
+end
+
+CreateThread(function()
+    local safe   = Config.HardFix.SafeCoords
+    local safeXY = vec2(safe.x, safe.y)
+    while true do
+        Wait(3000)
+        if not IsFixProcessing and not HardFixWaiting and LocalPlayer.state.isLoggedIn then
+            local c = GetEntityCoords(PlayerPedId())
+            -- 上空から落下中でも検知できるよう水平距離だけで判定する
+            if #(vec2(c.x, c.y) - safeXY) < 1000.0 then
+                IsFixProcessing = true
+                local ok, err = pcall(recoverFromSafeCoords)
+                if not ok then
+                    print('^1[SyncFix] HardFix recovery ERROR: ' .. tostring(err) .. '^7')
+                    FreezeEntityPosition(PlayerPedId(), false)
+                    ClearFocus()
+                    DoScreenFadeIn(500)
+                end
+                IsFixProcessing = false
+            end
+        end
     end
 end)
 

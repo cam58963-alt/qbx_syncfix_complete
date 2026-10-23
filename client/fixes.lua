@@ -2,38 +2,86 @@
 -- client/fixes.lua - 修正処理本体（QuickFix / HardFix / MLOFix / Emergency）
 -- ========================================================
 
--- カウントダウン制御フラグ
-CountdownActive = false
-
 -- HardFix RoutingBucket 隔離フラグ
 HardFixIsolated = false
 
+-- HardFix 待機中フラグ
+--   1回目の /syncdeep で待機場所へ移動して true
+--   2回目の /syncdeep で元の場所へ戻って false
+HardFixWaiting = false
+
+local hardFixWaitStart = 0     -- 待機を始めた時刻（GetGameTimer）
+local hardFixOrigin    = nil   -- 元の場所（vec4）
+local hardFixShell     = nil   -- 待機用シェルのエンティティ（自分の画面だけに出すローカルオブジェクト）
+
 -- ========================================================
--- カウントダウン表示
+-- 待機用シェル（Config.HardFix.Shell）
 -- ========================================================
-local function showCountdown(seconds)
-    CountdownActive = true
-    CreateThread(function()
-        for i = seconds, 1, -1 do
-            if not CountdownActive then break end
-            ShowNotification('HardFix',
-                string.format(Config.Messages.Hard.Countdown, i), 'warning', 1100)
-            Wait(1000)
-        end
-        CountdownActive = false
-    end)
+-- モデル未設定・未ストリームなら nil を返し、従来のフリーズ待機に切り替える
+local function getShellConfig()
+    local shell = Config.HardFix.Shell
+    if not shell or not shell.model or shell.model == '' then return nil end
+    local hash = type(shell.model) == 'number' and shell.model or GetHashKey(shell.model)
+    if not IsModelInCdimage(hash) then
+        print(string.format('^3[SyncFix] ^7HardFix shell model not found: %s (fallback to freeze mode)',
+            tostring(shell.model)))
+        return nil
+    end
+    return shell, hash
+end
+
+local function spawnShell(hash, safe)
+    RequestModel(hash)
+    local t = 0
+    while not HasModelLoaded(hash) and t < 5000 do Wait(50); t = t + 50 end
+    if not HasModelLoaded(hash) then return nil end
+
+    -- isNetwork = false: 自分の画面にだけ出す（他プレイヤーには見えない）
+    local obj = CreateObject(hash, safe.x, safe.y, safe.z, false, false, false)
+    SetModelAsNoLongerNeeded(hash)
+    if not obj or obj == 0 then return nil end
+
+    SetEntityHeading(obj, safe.w)
+    FreezeEntityPosition(obj, true)
+    return obj
+end
+
+local function deleteShell()
+    if hardFixShell and DoesEntityExist(hardFixShell) then
+        DeleteEntity(hardFixShell)
+    end
+    hardFixShell = nil
 end
 
 -- ========================================================
--- HardFix 待機中テキスト表示
+-- サーバーに保存された復帰地点（metadata.syncfix_return）
 -- ========================================================
-local function drawHardFixText(stayTime)
-    CreateThread(function()
-        local endTime = GetGameTimer() + (stayTime * 1000)
-        local cfg     = Config.HardFix.WaitingText
-        while GetGameTimer() < endTime and CountdownActive do
-            local remaining = math.ceil((endTime - GetGameTimer()) / 1000)
+function GetSavedReturnPoint()
+    local ok, data = pcall(function() return exports.qbx_core:GetPlayerData() end)
+    local rp = ok and data and data.metadata and data.metadata.syncfix_return
+    if type(rp) == 'table' and rp.x and rp.y and rp.z then
+        return vec4(rp.x, rp.y, rp.z, rp.w or 0.0)
+    end
+    return nil
+end
 
+-- 戻れるようになるまでの残り秒数（Config.HardFix.MinStay）
+function GetHardFixMinStayRemaining()
+    local minStayMs = (Config.HardFix.MinStay or 0) * 1000
+    local elapsed   = GetGameTimer() - hardFixWaitStart
+    return math.max(0, math.ceil((minStayMs - elapsed) / 1000))
+end
+
+-- ========================================================
+-- HardFix 待機中テキスト表示（待機が終わるまで表示し続ける）
+-- ========================================================
+local function drawWaitingText()
+    CreateThread(function()
+        local cfg     = Config.HardFix.WaitingText
+        local hint    = string.format(Config.Messages.Hard.ReturnHint, Config.Commands.HardFix)
+        local maxStay = Config.HardFix.MaxStay or 0
+
+        while HardFixWaiting do
             SetTextFont(0); SetTextProportional(1); SetTextScale(0.7, 0.7)
             SetTextColour(100, 200, 255, 255); SetTextDropshadow(0,0,0,0,255)
             SetTextEdge(1,0,0,0,255); SetTextDropShadow(); SetTextOutline(); SetTextCentre(true)
@@ -45,10 +93,14 @@ local function drawHardFixText(stayTime)
             SetTextEntry('STRING'); AddTextComponentString(cfg.description)
             DrawText(cfg.position.x, cfg.position.y - 0.02)
 
-            SetTextFont(0); SetTextScale(0.6, 0.6); SetTextColour(100,200,255,255)
+            local line = hint
+            if maxStay > 0 then
+                local left = math.max(0, maxStay - math.floor((GetGameTimer() - hardFixWaitStart) / 1000))
+                line = string.format('%s（自動で戻るまで %d:%02d）', hint, left // 60, left % 60)
+            end
+            SetTextFont(0); SetTextScale(0.5, 0.5); SetTextColour(100,200,255,255)
             SetTextCentre(true); SetTextOutline()
-            SetTextEntry('STRING')
-            AddTextComponentString(string.format('%d秒後に元の場所に戻ります', remaining))
+            SetTextEntry('STRING'); AddTextComponentString(line)
             DrawText(cfg.position.x, cfg.position.y + 0.05)
 
             Wait(0)
@@ -132,6 +184,7 @@ function PerformQuickFix()
     ShowNotification('同期修正', Config.Messages.Quick.Complete, 'success')
 end
 
+
 -- ========================================================
 -- HardFix サーバーイベント受信
 -- ========================================================
@@ -155,9 +208,17 @@ RegisterNetEvent('syncfix:hardFixIsolationFailed', function(reason)
     print(string.format('^1[SyncFix] HardFix isolation FAILED: %s^7', reason))
 end)
 
+-- サーバー側の待機上限（Config.HardFix.MaxStay + 余裕）を超えたとき
+RegisterNetEvent('syncfix:hardFixForceReturn', function()
+    if HardFixWaiting then
+        StartHardFixReturn('server timeout')
+    end
+end)
+
 -- ========================================================
 -- HardFix フェイルセーフ
 -- ========================================================
+-- 待機場所に取り残された場合は autofix.lua の復帰処理が元の場所へ戻す
 function HardFixFailSafe()
     local _ped = PlayerPedId()
     SetEntityVisible(_ped, true, false)
@@ -172,22 +233,30 @@ function HardFixFailSafe()
 
     HardFixIsolationReady   = false
     HardFixRestorationReady = false
-    CountdownActive         = false
+    HardFixWaiting          = false
+    hardFixOrigin           = nil
+    deleteShell()
 
     ClearFocus()
     DoScreenFadeIn(500)
 end
 
 -- ========================================================
--- HardFix（3層隔離方式・約20秒）
+-- HardFix 1回目: 待機場所へ移動（元の場所を記録）
 -- ========================================================
-function PerformHardFix()
+function PerformHardFixEnter()
     local ped             = PlayerPedId()
     local originalCoords  = GetEntityCoords(ped)
     local originalHeading = GetEntityHeading(ped)
-    local vehicle         = GetVehiclePedIsIn(ped, false)
     local safe            = Config.HardFix.SafeCoords
-    local stayTime        = Config.HardFix.StayTime
+
+    -- 車両内では実行しない
+    -- ClearPedTasksImmediately で ped が車から強制的に降ろされ、車だけがマップ外へ飛ぶ。
+    -- また RoutingBucket はプレイヤーだけを移すので、車両は元のバケットに残る。
+    if IsPedInAnyVehicle(ped, false) then
+        ShowNotification('強力修正', '車両から降りてから実行してください', 'error')
+        return
+    end
 
     TriggerServerEvent('syncfix:logUsage', 'HardFix',
         string.format('元座標: %.1f, %.1f, %.1f', originalCoords.x, originalCoords.y, originalCoords.z))
@@ -196,7 +265,7 @@ function PerformHardFix()
     DoScreenFadeOut(500)
     Wait(600)
 
-    -- フェーズ1: RoutingBucket 隔離要求
+    -- RoutingBucket 隔離要求（サーバーはここで元の場所を metadata に記録する）
     ShowNotification('強力修正', Config.Messages.Hard.Moving, 'warning')
     HardFixIsolationReady = false
     TriggerServerEvent('syncfix:requestHardFixIsolation')
@@ -209,63 +278,107 @@ function PerformHardFix()
         print('^3[SyncFix] HardFix: RoutingBucket isolation timeout, continuing without it^7')
     end
 
-    -- フェーズ2: Freeze + ストリーミング切断 + 物理移動
+    -- ストリーミング切断 + 物理移動
     ClearFocus(); ClearHdArea()
     FreezeEntityPosition(ped, true)
     SetEntityInvincible(ped, true)
-    SetPedCanRagdoll(ped, false)
     ClearPedTasksImmediately(ped)
 
-    if vehicle ~= 0 then
-        FreezeEntityPosition(vehicle, true)
-        SetEntityCollision(vehicle, false, false)
-        SetEntityCoords(vehicle, safe.x, safe.y, safe.z, false, false, false, false)
-        SetEntityHeading(vehicle, safe.w)
-        SetEntityCollision(vehicle, true, true)
+    -- シェルが設定されていれば、その中へ送って自由に歩けるようにする
+    local shell, shellHash = getShellConfig()
+    local shellObj = shell and spawnShell(shellHash, safe)
+    local shellSpawn = nil
+
+    if shellObj then
+        hardFixShell = shellObj
+        local off = shell.spawnOffset or vec4(0.0, 0.0, 0.0, 0.0)
+        shellSpawn = GetOffsetFromEntityInWorldCoords(shellObj, off.x, off.y, off.z)
+
+        SetEntityCoords(ped, shellSpawn.x, shellSpawn.y, shellSpawn.z, false, false, false, false)
+        SetEntityHeading(ped, (safe.w + (off.w or 0.0)) % 360.0)
+        SetFocusPosAndVel(shellSpawn.x, shellSpawn.y, shellSpawn.z, 0.0, 0.0, 0.0)
+        Wait(800)   -- シェルのコリジョンが有効になるのを待つ
+        ClearFocus()
+        FreezeEntityPosition(ped, false)
     else
+        -- シェルなし: 空中でフリーズして待機（落下アニメ防止のため透明化）
+        SetPedCanRagdoll(ped, false)
         SetEntityCollision(ped, false, false)
         SetEntityCoords(ped, safe.x, safe.y, safe.z, false, false, false, false)
         SetEntityHeading(ped, safe.w)
         SetEntityCollision(ped, true, true)
+
+        ClearPedTasksImmediately(ped)
+        Wait(100)
+        ClearPedTasksImmediately(ped)
+
+        SetEntityVisible(ped, false, false)
+
+        SetFocusPosAndVel(safe.x, safe.y, safe.z, 0.0, 0.0, 0.0)
+        NewLoadSceneStart(safe.x, safe.y, safe.z, safe.x, safe.y, safe.z, 50.0, 0)
+
+        local unloadWait = 0
+        while IsNewLoadSceneActive() and unloadWait < 2000 do
+            Wait(100); unloadWait = unloadWait + 100
+        end
+        if IsNewLoadSceneActive() then NewLoadSceneStop() end
     end
 
-    ClearPedTasksImmediately(ped)
-    Wait(100)
-    ClearPedTasksImmediately(ped)
+    -- 待機開始（2回目の /syncdeep まで待つ）
+    hardFixOrigin    = vec4(originalCoords.x, originalCoords.y, originalCoords.z, originalHeading)
+    hardFixWaitStart = GetGameTimer()
+    HardFixWaiting   = true
 
-    SetEntityVisible(ped, false, false)
-    if vehicle ~= 0 then SetEntityVisible(vehicle, false, false) end
-
-    SetFocusPosAndVel(safe.x, safe.y, safe.z, 0.0, 0.0, 0.0)
-    NewLoadSceneStart(safe.x, safe.y, safe.z, safe.x, safe.y, safe.z, 50.0, 0)
-
-    local unloadWait = 0
-    while IsNewLoadSceneActive() and unloadWait < 2000 do
-        Wait(100); unloadWait = unloadWait + 100
-    end
-    if IsNewLoadSceneActive() then NewLoadSceneStop() end
-
-    -- フェーズ3: 待機
     Wait(500)
     DoScreenFadeIn(500)
-    ShowNotification('強力修正', Config.Messages.Hard.Waiting, 'warning', 2000)
-    Wait(800)
+    ShowNotification('強力修正',
+        string.format(Config.Messages.Hard.Waiting, Config.Commands.HardFix), 'warning', 8000)
+    drawWaitingText()
 
-    showCountdown(stayTime)
-    drawHardFixText(stayTime)
+    -- シェルから落ちたら入口へ戻す（コリジョン抜け対策）
+    if shellSpawn then
+        local startedAt = hardFixWaitStart
+        CreateThread(function()
+            while HardFixWaiting and hardFixWaitStart == startedAt do
+                local p = PlayerPedId()
+                if GetEntityCoords(p).z < shellSpawn.z - 15.0 then
+                    SetEntityCoords(p, shellSpawn.x, shellSpawn.y, shellSpawn.z, false, false, false, false)
+                end
+                Wait(500)
+            end
+        end)
+    end
 
-    -- 後半からプリロード開始
-    CreateThread(function()
-        Wait(math.floor(stayTime / 2) * 1000)
-        SetFocusPosAndVel(originalCoords.x, originalCoords.y, originalCoords.z, 0.0, 0.0, 0.0)
-        RequestCollisionAtCoord(originalCoords.x, originalCoords.y, originalCoords.z)
-        RequestAdditionalCollisionAtCoord(originalCoords.x, originalCoords.y, originalCoords.z)
-    end)
+    -- 待機の上限時間を過ぎたら自動で戻す（0 なら無制限）
+    local maxStay = Config.HardFix.MaxStay or 0
+    if maxStay > 0 then
+        local startedAt = hardFixWaitStart
+        CreateThread(function()
+            while HardFixWaiting and hardFixWaitStart == startedAt do
+                if (GetGameTimer() - startedAt) >= maxStay * 1000 and not IsFixProcessing then
+                    StartHardFixReturn('max stay')
+                end
+                Wait(1000)
+            end
+        end)
+    end
+end
 
-    Wait(stayTime * 1000)
+-- ========================================================
+-- HardFix 2回目: 元の場所へ戻る（記録を削除）
+-- ========================================================
+function PerformHardFixReturn()
+    local ped    = PlayerPedId()
+    local origin = hardFixOrigin or GetSavedReturnPoint() or Config.Emergency.EscapeLocation
 
-    -- フェーズ4: RoutingBucket 解除
-    CountdownActive = false
+    HardFixWaiting = false   -- 待機中テキストを止める
+    hardFixOrigin  = nil
+
+    ShowNotification('強力修正', Config.Messages.Hard.Returning, 'info')
+    DoScreenFadeOut(500)
+    Wait(500)
+
+    -- RoutingBucket 解除
     HardFixRestorationReady = false
     TriggerServerEvent('syncfix:releaseHardFixIsolation')
 
@@ -274,61 +387,45 @@ function PerformHardFix()
         Wait(100); restoreWait = restoreWait + 100
     end
 
-    -- フェーズ5: 元の場所へ復帰
-    ShowNotification('強力修正', Config.Messages.Hard.Returning, 'info')
-    DoScreenFadeOut(500)
-    Wait(500)
-
+    FreezeEntityPosition(ped, true)   -- シェル内を歩いていた場合も止める
     SetEntityVisible(ped, true, false)
-    if vehicle ~= 0 then SetEntityVisible(vehicle, true, false) end
-
     SetEntityInvincible(ped, false)
     SetPedCanRagdoll(ped, true)
 
+    -- 元の場所を先に読み込む
     ClearFocus()
-    SetFocusPosAndVel(originalCoords.x, originalCoords.y, originalCoords.z, 0.0, 0.0, 0.0)
-    NewLoadSceneStart(
-        originalCoords.x, originalCoords.y, originalCoords.z,
-        originalCoords.x, originalCoords.y, originalCoords.z, 200.0, 0)
+    SetFocusPosAndVel(origin.x, origin.y, origin.z, 0.0, 0.0, 0.0)
+    NewLoadSceneStart(origin.x, origin.y, origin.z, origin.x, origin.y, origin.z, 200.0, 0)
     WaitNewLoadSceneLoaded(8000)
     if IsNewLoadSceneActive() then NewLoadSceneStop() end
 
-    local interior = GetInteriorAtCoords(originalCoords.x, originalCoords.y, originalCoords.z)
+    local interior   = GetInteriorAtCoords(origin.x, origin.y, origin.z)
     local okInterior = RefreshAndWaitInterior(interior)
-
-    -- ★ バグ修正: MLOFixは必ず物理復帰「後」に実行する
-    -- （PerformMLOFix は GetEntityCoords(ped) で現在座標を取得するため、
-    --   ped がまだ安全座標にいる段階で呼ぶと 12000,12000,2001 で実行されてしまう）
 
     Wait(1500)
 
-    -- ★ 物理復帰を先に実行
-    if vehicle ~= 0 then
-        SetEntityCoords(vehicle, originalCoords.x, originalCoords.y, originalCoords.z + 0.5,
-            false, false, false, true)
-        SetEntityHeading(vehicle, originalHeading)
-        FreezeEntityPosition(vehicle, false)
-    else
-        SetEntityCoords(ped, originalCoords.x, originalCoords.y, originalCoords.z + 0.5,
-            false, false, false, true)
-        SetEntityHeading(ped, originalHeading)
-    end
+    -- 物理復帰（MLOFix は GetEntityCoords(ped) を使うので必ずこの後に実行する）
+    SetEntityCoords(ped, origin.x, origin.y, origin.z + 0.5, false, false, false, true)
+    SetEntityHeading(ped, origin.w or 0.0)
     FreezeEntityPosition(ped, false)
+    deleteShell()
+
+    -- 元の場所に戻れたのでサーバー側の記録を削除
+    TriggerServerEvent('syncfix:clearReturnPoint')
 
     local t = 0
     while not HasCollisionLoadedAroundEntity(ped) and t < 8000 do
-        RequestCollisionAtCoord(originalCoords.x, originalCoords.y, originalCoords.z)
+        RequestCollisionAtCoord(origin.x, origin.y, origin.z)
         Wait(100); t = t + 100
     end
     if IsNewLoadSceneActive() then NewLoadSceneStop() end
 
     ClearPedTasksImmediately(ped)
 
-    -- ★ カメラリセット（上空見下ろしアングル防止）
+    -- カメラリセット（上空見下ろしアングル防止）
     ClearFocus()
     ClearHdArea()
 
-    -- ★ 物理復帰「後」にinteriorが未readyならMLOFixを実行
     if interior ~= 0 and not okInterior then
         print('^3[SyncFix] HardFix: interior not ready -> fallback to MLOFix^7')
         pcall(PerformMLOFix)
