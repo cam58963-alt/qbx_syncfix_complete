@@ -69,22 +69,18 @@ end)
 -- ========================================================
 -- HardFix 中断からの復帰
 -- ========================================================
--- HardFix 中に切断・クラッシュすると、マップ外上空（SafeCoords, 高度2000m）が保存され
--- 次回ログイン時にそこへ出現して落下してしまう。また処理がエラーで中断した場合も
--- マップ外に取り残される。修正処理中でないのに SafeCoords 付近にいたら、
--- サーバーが保存した復帰地点（なければ緊急脱出地点）へ戻す。
-local function getReturnPoint()
-    local ok, data = pcall(function() return exports.qbx_core:GetPlayerData() end)
-    local rp = ok and data and data.metadata and data.metadata.syncfix_return
-    if type(rp) == 'table' and rp.x and rp.y and rp.z then
-        return vec4(rp.x, rp.y, rp.z, rp.w or 0.0), true
-    end
-    return Config.Emergency.EscapeLocation, false
-end
-
+-- HardFix の待機中に切断・クラッシュすると、マップ外上空（SafeCoords, 高度2000m）が保存され
+-- 次回ログイン時にそこへ出現して落下してしまう。またエラーやリソース再起動で
+-- 待機状態が消えた場合も取り残される。待機中でも修正処理中でもないのに
+-- SafeCoords 付近にいたら、サーバーが記録した元の場所（なければ緊急脱出地点）へ戻す。
 local function recoverFromSafeCoords()
-    local ped = PlayerPedId()
-    local dest, hasReturnPoint = getReturnPoint()
+    local ped  = PlayerPedId()
+    local dest = GetSavedReturnPoint()
+    local hasReturnPoint = dest ~= nil
+    dest = dest or Config.Emergency.EscapeLocation
+
+    -- サーバー側でまだ隔離中なら元のバケットへ戻す（隔離していなければ何もしない）
+    TriggerServerEvent('syncfix:releaseHardFixIsolation')
     print(string.format('^3[SyncFix] ^7Stranded at HardFix safe coords -> recovering to %.1f, %.1f, %.1f (%s)',
         dest.x, dest.y, dest.z, hasReturnPoint and 'saved origin' or 'escape location'))
 
@@ -123,7 +119,7 @@ CreateThread(function()
     local safeXY = vec2(safe.x, safe.y)
     while true do
         Wait(3000)
-        if not IsFixProcessing and LocalPlayer.state.isLoggedIn then
+        if not IsFixProcessing and not HardFixWaiting and LocalPlayer.state.isLoggedIn then
             local c = GetEntityCoords(PlayerPedId())
             -- 上空から落下中でも検知できるよう水平距離だけで判定する
             if #(vec2(c.x, c.y) - safeXY) < 1000.0 then

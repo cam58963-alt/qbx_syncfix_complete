@@ -81,22 +81,41 @@ RegisterNetEvent('syncfix:releaseHardFixIsolation', function()
 end)
 
 -- ========================================================
--- 隔離タイムアウト監視（60秒でフェイルセーフ解除）
+-- 隔離タイムアウト監視（フェイルセーフ）
 -- ========================================================
+-- 待機はプレイヤーが2回目の /syncdeep を打つまで続く。
+-- 通常はクライアントが Config.HardFix.MaxStay で自動的に戻るので、
+-- サーバーはその 60 秒後をフェイルセーフとして強制的に戻す。
+-- MaxStay = 0（無制限）のときはタイムアウトしない。
 CreateThread(function()
     while true do
         Wait(10000)
-        local now = os.time()
-        for pid, data in pairs(isolatedPlayers) do
-            if now - data.isolatedAt > 60 then
-                print(string.format(
-                    '^1[SyncFix] HardFix isolation TIMEOUT: Player %d (bucket %d) -> force restore to %d^7',
-                    pid, data.tempBucket, data.originalBucket))
-                SetPlayerRoutingBucket(pid, data.originalBucket)
-                isolatedPlayers[pid] = nil
-                TriggerClientEvent('syncfix:hardFixRestored', pid)
+        local maxStay = Config.HardFix.MaxStay or 0
+        if maxStay > 0 then
+            local now = os.time()
+            for pid, data in pairs(isolatedPlayers) do
+                if now - data.isolatedAt > maxStay + 60 then
+                    print(string.format(
+                        '^1[SyncFix] HardFix isolation TIMEOUT: Player %d (bucket %d) -> force restore to %d^7',
+                        pid, data.tempBucket, data.originalBucket))
+                    SetPlayerRoutingBucket(pid, data.originalBucket)
+                    isolatedPlayers[pid] = nil
+                    TriggerClientEvent('syncfix:hardFixRestored', pid)
+                    TriggerClientEvent('syncfix:hardFixForceReturn', pid)
+                end
             end
         end
+    end
+end)
+
+-- ========================================================
+-- リソース停止時: 隔離中のプレイヤーを元のバケットへ戻す
+-- ========================================================
+-- 戻さないと再起動後に隔離データが消え、50000番台のバケットに取り残される
+AddEventHandler('onResourceStop', function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then return end
+    for pid, data in pairs(isolatedPlayers) do
+        SetPlayerRoutingBucket(pid, data.originalBucket)
     end
 end)
 
