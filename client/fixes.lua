@@ -1,5 +1,5 @@
 -- ========================================================
--- client/fixes.lua - 修正処理本体（QuickFix / HardFix / MLOFix / Emergency）
+-- client/fixes.lua - 修正処理本体（QuickFix / HardFix / MLOFix）
 -- ========================================================
 
 -- HardFix RoutingBucket 隔離フラグ
@@ -109,7 +109,31 @@ local function drawWaitingText()
 end
 
 -- ========================================================
+-- 周辺プレイヤー・車両の表示を戻す（自分の画面だけ）
+-- ========================================================
+local function refreshNearbyEntities(myCoords)
+    local myPed = PlayerPedId()
+    for _, player in ipairs(GetActivePlayers()) do
+        local targetPed = GetPlayerPed(player)
+        if targetPed ~= myPed and DoesEntityExist(targetPed)
+            and #(myCoords - GetEntityCoords(targetPed)) < 300.0 then
+            SetEntityVisible(targetPed, true, false)
+            SetEntityAlpha(targetPed, 255, false)
+            SetEntityLodDist(targetPed, 500)
+        end
+    end
+    for _, vehicle in ipairs(GetGamePool('CVehicle')) do
+        if #(myCoords - GetEntityCoords(vehicle)) < 200.0 then
+            SetEntityVisible(vehicle, true, false)
+            SetEntityAlpha(vehicle, 255, false)
+            SetEntityLodDist(vehicle, 500)
+        end
+    end
+end
+
+-- ========================================================
 -- QuickFix（ブラックアウト方式・約10秒）
+-- 自分の画面だけで完結する（他のプレイヤーには何も送らない）
 -- ========================================================
 function PerformQuickFix()
     local ped     = PlayerPedId()
@@ -121,9 +145,8 @@ function PerformQuickFix()
         string.format('座標: %.1f, %.1f, %.1f', coords.x, coords.y, coords.z))
 
     ShowNotification('同期修正', Config.Messages.Quick.Start, 'info')
-    TriggerServerEvent('syncfix:forceServerSync')
-    TriggerServerEvent('syncfix:resetEntityOwnership')
-    Wait(1500)
+    refreshNearbyEntities(coords)
+    Wait(500)
 
     DoScreenFadeOut(800)
     local t = 0
@@ -369,7 +392,7 @@ end
 -- ========================================================
 function PerformHardFixReturn()
     local ped    = PlayerPedId()
-    local origin = hardFixOrigin or GetSavedReturnPoint() or Config.Emergency.EscapeLocation
+    local origin = hardFixOrigin or GetSavedReturnPoint() or Config.HardFix.FallbackLocation
 
     HardFixWaiting = false   -- 待機中テキストを止める
     hardFixOrigin  = nil
@@ -526,68 +549,3 @@ function PerformMLOFix()
         ShowNotification('MLO修正', '周辺の読み込みを強制リセットしました', 'success')
     end
 end
-
--- ========================================================
--- 緊急脱出（サーバー確認 → 実行）
--- ========================================================
-function PerformEmergencyEscape()
-    if not Config.Emergency.Enabled then
-        ShowNotification('緊急脱出', 'この機能は無効化されています', 'error')
-        return
-    end
-    -- クライアント側の戦闘チェック（IsPedInMeleeCombat/IsPedInCombat はクライアント専用native）
-    if Config.Emergency.Restrictions.BlockIfInCombat then
-        local ped = PlayerPedId()
-        if IsPedInMeleeCombat(ped) or IsPedInCombat(ped, 0) then
-            ShowNotification('緊急脱出',
-                string.format('%s\n理由: 戦闘中', Config.Messages.Emergency.Blocked), 'error')
-            IsFixProcessing = false
-            return
-        end
-    end
-    TriggerServerEvent('syncfix:checkEmergencyRestrictions')
-end
-
-RegisterNetEvent('syncfix:emergencyCheckResult', function(restrictions)
-    if #restrictions > 0 then
-        local restrictionText = table.concat(restrictions, '、')
-        ShowNotification('緊急脱出',
-            string.format('%s\n理由: %s', Config.Messages.Emergency.Blocked, restrictionText), 'error')
-        IsFixProcessing = false
-        return
-    end
-
-    local ped           = PlayerPedId()
-    local currentCoords = GetEntityCoords(ped)
-
-    TriggerServerEvent('syncfix:logUsage', 'Emergency',
-        string.format('脱出元: %.1f, %.1f, %.1f', currentCoords.x, currentCoords.y, currentCoords.z))
-
-    ShowNotification('緊急脱出', Config.Messages.Emergency.Start, 'warning')
-    DoScreenFadeOut(500)
-    Wait(500)
-
-    local vehicle = GetVehiclePedIsIn(ped, false)
-    if vehicle ~= 0 then
-        TaskLeaveVehicle(ped, vehicle, 0)
-        Wait(1000)
-    end
-
-    ShowNotification('緊急脱出', Config.Messages.Emergency.Moving, 'info')
-
-    local escape = Config.Emergency.EscapeLocation
-    SetEntityCoords(ped, escape.x, escape.y, escape.z, false, false, false, true)
-    SetEntityHeading(ped, escape.w)
-
-    RequestCollisionAtCoord(escape.x, escape.y, escape.z)
-    NewLoadSceneStart(escape.x, escape.y, escape.z, escape.x, escape.y, escape.z, 100.0, 0)
-
-    local t = 0
-    while not HasCollisionLoadedAroundEntity(ped) and t < 5000 do Wait(100); t = t + 100 end
-    if IsNewLoadSceneActive() then NewLoadSceneStop() end
-
-    Wait(1000)
-    DoScreenFadeIn(500)
-    ShowNotification('緊急脱出', Config.Messages.Emergency.Complete, 'success')
-    IsFixProcessing = false
-end)

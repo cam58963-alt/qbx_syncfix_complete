@@ -83,12 +83,11 @@ end, false)
 -- ========================================================
 RegisterNetEvent('syncfix:showStatsNotification', function(statsData)
     ShowNotification('SyncFix Statistics', string.format(
-        'Uptime: %dh | Users: %d\n/%s: %d | /%s: %d\n/%s: %d | /%s: %d',
+        'Uptime: %dh | Users: %d\n/%s: %d | /%s: %d\n/%s: %d',
         statsData.serverUptime, statsData.playerCount,
         Config.Commands.QuickFix,  statsData.totalUsage.QuickFix,
         Config.Commands.HardFix,   statsData.totalUsage.HardFix,
-        Config.Commands.MLOFix,    statsData.totalUsage.MLOFix,
-        Config.Commands.Emergency, statsData.totalUsage.Emergency
+        Config.Commands.MLOFix,    statsData.totalUsage.MLOFix
     ), 'info', 8000)
 end)
 
@@ -103,14 +102,13 @@ RegisterNetEvent('syncfix:showDetailedStats', function(playerStats, summary)
     print(string.format('  /%s (QuickFix) : %d', Config.Commands.QuickFix,  summary.totalUsage.QuickFix))
     print(string.format('  /%s (HardFix)  : %d', Config.Commands.HardFix,   summary.totalUsage.HardFix))
     print(string.format('  /%s (MLOFix)   : %d', Config.Commands.MLOFix,    summary.totalUsage.MLOFix))
-    print(string.format('  /%s (Emergency): %d', Config.Commands.Emergency, summary.totalUsage.Emergency))
     print('')
     print('Per-player breakdown:')
     for cid, data in pairs(playerStats) do
-        local total = (data.QuickFix or 0) + (data.HardFix or 0) + (data.MLOFix or 0) + (data.Emergency or 0)
-        print(string.format('  [%s] %s  Q:%d H:%d M:%d E:%d  Total:%d',
+        local total = (data.QuickFix or 0) + (data.HardFix or 0) + (data.MLOFix or 0)
+        print(string.format('  [%s] %s  Q:%d H:%d M:%d  Total:%d',
             cid, data.name or '?',
-            data.QuickFix or 0, data.HardFix or 0, data.MLOFix or 0, data.Emergency or 0, total))
+            data.QuickFix or 0, data.HardFix or 0, data.MLOFix or 0, total))
     end
     print('========================================')
 end)

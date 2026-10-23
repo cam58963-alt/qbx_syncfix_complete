@@ -5,7 +5,7 @@ lua54 'yes'
 name 'qbx_syncfix_complete'
 author 'QBX SyncFix Team'
 description 'Complete desync fix for QBX Framework (modular)'
-version '3.5.0'
+version '3.6.0'
 
 shared_scripts {
     '@ox_lib/init.lua',
@@ -40,10 +40,9 @@ dependencies {
 
 --[[
 コマンド一覧:
-  /sync      - 軽量同期修正（ブラックアウト方式・4-6秒）
-  /syncdeep  - 徹底同期修正（3層隔離方式・8-12秒）
+  /sync      - 軽量同期修正（ブラックアウト方式・自分の画面のみ・約10秒）
+  /syncdeep  - 徹底同期修正（1回目で待機場所へ、2回目で元の場所へ戻る）
   /mlofix    - MLO専用修正（隠しコマンド・2-3秒）
-  /escape    - 緊急脱出（レギオンスクエアへ移動）
   /syncstats - 使用統計表示（管理者用）
   /forcesync - 全体同期リセット（管理者専用）
   /synccheck - 同期診断

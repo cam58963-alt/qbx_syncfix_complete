@@ -55,32 +55,6 @@ function CheckCooldown()
     return true
 end
 
--- 緊急脱出専用クールダウン
-local lastEmergencyUse     = 0
-local emergencyUseCount    = 0
-local emergencyHourlyReset = GetGameTimer()
-
-function CheckEmergencyCooldown()
-    local currentTime = GetGameTimer()
-    if currentTime - emergencyHourlyReset > 3600000 then
-        emergencyUseCount    = 0
-        emergencyHourlyReset = currentTime
-    end
-    if emergencyUseCount >= Config.Emergency.MaxUsesPerHour then
-        ShowNotification('緊急脱出制限', '1時間の使用制限に達しました', 'error')
-        return false
-    end
-    local timeSinceLastUse = (currentTime - lastEmergencyUse) / 1000
-    if timeSinceLastUse < Config.Emergency.Cooldown then
-        local remaining = math.ceil(Config.Emergency.Cooldown - timeSinceLastUse)
-        ShowNotification('緊急脱出制限', string.format('あと%d秒待ってください', remaining), 'error')
-        return false
-    end
-    lastEmergencyUse  = currentTime
-    emergencyUseCount = emergencyUseCount + 1
-    return true
-end
-
 -- ========================================================
 -- JOB制限チェック（TPポイントごとのjob制限）
 -- ========================================================
