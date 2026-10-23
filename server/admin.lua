@@ -15,12 +15,11 @@ if ServerHasOxLib then
         TriggerClientEvent('syncfix:showStatsNotification', source, statsData)
         TriggerClientEvent('syncfix:showDetailedStats', source, GetPlayerStats(), statsData)
         print('========== SyncFix Statistics ==========')
-        print(string.format('Uptime:%dh | Users:%d | /%s:%d /%s:%d /%s:%d /%s:%d',
+        print(string.format('Uptime:%dh | Users:%d | /%s:%d /%s:%d /%s:%d',
             statsData.serverUptime, statsData.playerCount,
             Config.Commands.QuickFix,  statsData.totalUsage.QuickFix,
             Config.Commands.HardFix,   statsData.totalUsage.HardFix,
-            Config.Commands.MLOFix,    statsData.totalUsage.MLOFix,
-            Config.Commands.Emergency, statsData.totalUsage.Emergency))
+            Config.Commands.MLOFix,    statsData.totalUsage.MLOFix))
         print('=======================================')
     end)
 
@@ -44,7 +43,7 @@ else
             local statsData = GetStatsData()
             print('========== SyncFix Console Stats ==========')
             for _, data in pairs(GetPlayerStats()) do
-                local total = data.QuickFix + data.HardFix + data.MLOFix + data.Emergency
+                local total = data.QuickFix + data.HardFix + data.MLOFix
                 print(string.format('  %s: %d uses', data.name, total))
             end
             print('==========================================')

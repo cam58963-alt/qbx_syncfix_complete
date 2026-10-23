@@ -117,6 +117,11 @@ end
 -- ========================================================
 local function cmdMloFix()
     if blockIfHardFixWaiting() then return end
+    -- 車内では不可（ped だけ上下に動かすので車から降ろされる）
+    if IsPedInAnyVehicle(PlayerPedId(), false) then
+        ShowNotification('MLO修正', '車から降りてから使ってください', 'error')
+        return
+    end
     RunFix(CheckCooldown, PerformMLOFix, function(err)
         print('^1[SyncFix] performMLOFix ERROR: ' .. tostring(err) .. '^7')
         ClearFocus(); DoScreenFadeIn(300)
@@ -125,95 +130,30 @@ local function cmdMloFix()
 end
 
 -- ========================================================
--- /escape（緊急脱出）
--- ========================================================
-local function cmdEscape()
-    if blockIfHardFixWaiting() then return end
-    if IsFixProcessing then
-        ShowNotification('処理中', '修正処理を実行中です', 'error')
-        return
-    end
-    if not CheckEmergencyCooldown() then return end
-
-    IsFixProcessing = true
-    CreateThread(function()
-        local ok, err = pcall(PerformEmergencyEscape)
-        if not ok then
-            print('^1[SyncFix] performEmergencyEscape ERROR: ' .. tostring(err) .. '^7')
-            ShowNotification('エラー', '緊急脱出処理中にエラーが発生しました', 'error')
-            IsFixProcessing = false
-            return
-        end
-        -- フェイルセーフ: 10秒後に強制解放
-        CreateThread(function()
-            Wait(10000)
-            if IsFixProcessing then
-                IsFixProcessing = false
-                print('^3[SyncFix] emergencyEscape failsafe: force-released isProcessing^7')
-            end
-        end)
-    end)
-end
-
--- ========================================================
 -- コマンド登録
 -- ========================================================
 RegisterCommand(Config.Commands.QuickFix,  cmdSync,     false)
 RegisterCommand(Config.Commands.HardFix,   cmdSyncDeep, false)
-RegisterCommand(Config.Commands.Emergency, cmdEscape,   false)
 RegisterCommand(Config.Commands.MLOFix,    cmdMloFix,   false)
 
 -- 互換コマンド
 RegisterCommand('quickreload', cmdSync,     false)
 RegisterCommand('hardfix',     cmdSyncDeep, false)
 
--- チャット候補（3つだけ表示）
+-- チャット候補（2つだけ表示）
 CreateThread(function()
     Wait(2000)
     TriggerEvent('chat:addSuggestion', '/' .. Config.Commands.QuickFix,  '軽量な同期修正（NPC/プレイヤー/描画の軽症向け）')
     TriggerEvent('chat:addSuggestion', '/' .. Config.Commands.HardFix,   '徹底同期修正（1回目で待機場所へ、2回目で元の場所へ戻る）')
-    TriggerEvent('chat:addSuggestion', '/' .. Config.Commands.Emergency, '緊急脱出（レギオンスクエアへ移動）')
 end)
 
 -- ========================================================
--- サーバーイベント受信（汎用通知・同期パルス・強制リセット等）
+-- サーバーイベント受信（汎用通知・強制リセット等）
 -- ========================================================
 
 -- 汎用通知
 RegisterNetEvent('syncfix:notify', function(data)
     ShowNotification(data.title or 'SyncFix', data.description or '', data.type or 'info')
-end)
-
--- 同期パルス受信
-RegisterNetEvent('syncfix:receiveSyncPulse', function(sourcePid)
-    local myPed    = PlayerPedId()
-    local myCoords = GetEntityCoords(myPed)
-    local fixCount = 0
-
-    for _, player in ipairs(GetActivePlayers()) do
-        local targetPed = GetPlayerPed(player)
-        if targetPed ~= myPed and DoesEntityExist(targetPed) then
-            if #(myCoords - GetEntityCoords(targetPed)) < 300.0 then
-                SetEntityVisible(targetPed, true, false)
-                SetEntityAlpha(targetPed, 255, false)
-                SetEntityLodDist(targetPed, 500)
-                fixCount = fixCount + 1
-            end
-        end
-    end
-
-    for _, vehicle in ipairs(GetGamePool('CVehicle')) do
-        if #(myCoords - GetEntityCoords(vehicle)) < 200.0 then
-            SetEntityVisible(vehicle, true, false)
-            SetEntityAlpha(vehicle, 255, false)
-            SetEntityLodDist(vehicle, 500)
-        end
-    end
-
-    if fixCount > 0 then
-        ShowNotification('サーバー同期',
-            string.format('%d個のエンティティを再同期しました', fixCount), 'success')
-    end
 end)
 
 RegisterNetEvent('syncfix:dimensionResetComplete', function()
@@ -259,29 +199,4 @@ RegisterNetEvent('syncmanager:forceReset', function()
     Wait(2000)
     if IsNewLoadSceneActive() then NewLoadSceneStop() end
     ClearFocus()
-end)
-
--- エンティティ所有権リフレッシュ
-RegisterNetEvent('syncfix:refreshEntityOwnership', function()
-    local myPed    = PlayerPedId()
-    local myCoords = GetEntityCoords(myPed)
-    local count    = 0
-
-    for _, vehicle in ipairs(GetGamePool('CVehicle')) do
-        if #(myCoords - GetEntityCoords(vehicle)) < 200.0 and NetworkGetEntityIsNetworked(vehicle) then
-            NetworkRequestControlOfEntity(vehicle)
-            count = count + 1
-        end
-    end
-
-    for _, obj in ipairs(GetGamePool('CObject')) do
-        if #(myCoords - GetEntityCoords(obj)) < 100.0 and NetworkGetEntityIsNetworked(obj) then
-            NetworkRequestControlOfEntity(obj)
-            count = count + 1
-        end
-    end
-
-    if count > 0 then
-        print(string.format('[SyncFix] Refreshed ownership for %d entities', count))
-    end
 end)

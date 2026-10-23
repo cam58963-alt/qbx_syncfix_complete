@@ -68,7 +68,6 @@ local function sendDiscordNotification(source, commandType, extraInfo)
         QuickFix  = '軽量修正 (/'  .. Config.Commands.QuickFix  .. ')',
         HardFix   = '徹底修正 (/'   .. Config.Commands.HardFix   .. ')',
         MLOFix    = 'MLO修正 (/'    .. Config.Commands.MLOFix    .. ')',
-        Emergency = '緊急脱出 (/' .. Config.Commands.Emergency .. ')',
         Teleport  = 'テレポート'
     }
 
@@ -112,7 +111,7 @@ RegisterNetEvent('syncfix:logUsage', function(commandType, details)
         return
     end
 
-    local validTypes = { QuickFix = true, HardFix = true, MLOFix = true, Emergency = true, Teleport = true }
+    local validTypes = { QuickFix = true, HardFix = true, MLOFix = true, Teleport = true }
     if not validTypes[commandType] then
         print(string.format('[SyncFix] Invalid commandType: %s (src:%d)', tostring(commandType), src))
         return
@@ -121,7 +120,7 @@ RegisterNetEvent('syncfix:logUsage', function(commandType, details)
     if not playerStats[citizenid] then
         playerStats[citizenid] = {
             name = Player.PlayerData.charinfo.firstname .. ' ' .. Player.PlayerData.charinfo.lastname,
-            QuickFix = 0, HardFix = 0, MLOFix = 0, Emergency = 0, Teleport = 0, lastUsed = os.time()
+            QuickFix = 0, HardFix = 0, MLOFix = 0, Teleport = 0, lastUsed = os.time()
         }
     end
 
@@ -130,74 +129,6 @@ RegisterNetEvent('syncfix:logUsage', function(commandType, details)
 
     sendDiscordNotification(src, commandType, details)
     print(string.format('[SyncFix] %s used %s - %s', playerStats[citizenid].name, commandType, details or ''))
-end)
-
--- ========================================================
--- 緊急脱出制限チェック
--- ========================================================
-RegisterNetEvent('syncfix:checkEmergencyRestrictions', function()
-    local src    = source
-    local Player = exports.qbx_core:GetPlayer(src)
-    if not Player then return end
-
-    local ok, reason = CheckRateLimit(Player.PlayerData.citizenid, 'emergencyCheck', 5, 60, 10)
-    if not ok then
-        TriggerClientEvent('syncfix:emergencyCheckResult', src, { reason })
-        return
-    end
-
-    local restrictions = {}
-    if Config.Emergency.Restrictions.BlockIfHandcuffed then
-        if Player.PlayerData.metadata and Player.PlayerData.metadata.ishandcuffed then
-            table.insert(restrictions, 'Handcuffed')
-        end
-    end
-    if Config.Emergency.Restrictions.BlockIfDead then
-        if Player.PlayerData.metadata and
-           (Player.PlayerData.metadata.isdead or Player.PlayerData.metadata.inlaststand) then
-            table.insert(restrictions, 'Dead/Downed')
-        end
-    end
-    -- BlockIfInCombat はクライアント側で IsPedInCombat() を使って判定済み（server native なし）
-    TriggerClientEvent('syncfix:emergencyCheckResult', src, restrictions)
-end)
-
--- ========================================================
--- 同期イベント
--- ========================================================
-RegisterNetEvent('syncfix:forceServerSync', function()
-    local src    = source
-    local Player = exports.qbx_core:GetPlayer(src)
-    if not Player then return end
-
-    local ok, reason = CheckRateLimit(Player.PlayerData.citizenid, 'forceServerSync', 4, 60, 15)
-    if not ok then
-        print(string.format('[SyncFix] forceServerSync blocked: %s', reason))
-        return
-    end
-
-    local syncCount = 0
-    for _, targetId in ipairs(GetPlayers()) do
-        local targetSrc = tonumber(targetId)
-        if targetSrc ~= src then
-            TriggerClientEvent('syncfix:receiveSyncPulse', targetSrc, src)
-            syncCount = syncCount + 1
-        end
-    end
-    TriggerClientEvent('syncfix:receiveSyncPulse', src, src)
-    print(string.format('[SyncFix] Player %d triggered server sync for %d players', src, syncCount))
-end)
-
-RegisterNetEvent('syncfix:resetEntityOwnership', function()
-    local src    = source
-    local Player = exports.qbx_core:GetPlayer(src)
-    if not Player then return end
-
-    local ok, _ = CheckRateLimit(Player.PlayerData.citizenid, 'resetOwnership', 3, 60, 15)
-    if not ok then return end
-
-    print(string.format('^2[SyncFix] Entity ownership reset requested by player %d^7', src))
-    TriggerClientEvent('syncfix:refreshEntityOwnership', src)
 end)
 
 -- ========================================================
@@ -272,14 +203,13 @@ function GetStatsData()
     local statsData = {
         serverUptime = math.floor((os.time() - serverStartTime) / 3600),
         playerCount  = 0,
-        totalUsage   = { QuickFix = 0, HardFix = 0, MLOFix = 0, Emergency = 0, Teleport = 0 }
+        totalUsage   = { QuickFix = 0, HardFix = 0, MLOFix = 0, Teleport = 0 }
     }
     for _, data in pairs(playerStats) do
         statsData.playerCount          = statsData.playerCount + 1
         statsData.totalUsage.QuickFix  = statsData.totalUsage.QuickFix  + data.QuickFix
         statsData.totalUsage.HardFix   = statsData.totalUsage.HardFix   + data.HardFix
         statsData.totalUsage.MLOFix    = statsData.totalUsage.MLOFix    + data.MLOFix
-        statsData.totalUsage.Emergency = statsData.totalUsage.Emergency + data.Emergency
         statsData.totalUsage.Teleport  = statsData.totalUsage.Teleport  + (data.Teleport or 0)
     end
     return statsData

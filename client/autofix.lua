@@ -72,17 +72,17 @@ end)
 -- HardFix の待機中に切断・クラッシュすると、マップ外上空（SafeCoords, 高度2000m）が保存され
 -- 次回ログイン時にそこへ出現して落下してしまう。またエラーやリソース再起動で
 -- 待機状態が消えた場合も取り残される。待機中でも修正処理中でもないのに
--- SafeCoords 付近にいたら、サーバーが記録した元の場所（なければ緊急脱出地点）へ戻す。
+-- SafeCoords 付近にいたら、サーバーが記録した元の場所（なければ Config.HardFix.FallbackLocation）へ戻す。
 local function recoverFromSafeCoords()
     local ped  = PlayerPedId()
     local dest = GetSavedReturnPoint()
     local hasReturnPoint = dest ~= nil
-    dest = dest or Config.Emergency.EscapeLocation
+    dest = dest or Config.HardFix.FallbackLocation
 
     -- サーバー側でまだ隔離中なら元のバケットへ戻す（隔離していなければ何もしない）
     TriggerServerEvent('syncfix:releaseHardFixIsolation')
     print(string.format('^3[SyncFix] ^7Stranded at HardFix safe coords -> recovering to %.1f, %.1f, %.1f (%s)',
-        dest.x, dest.y, dest.z, hasReturnPoint and 'saved origin' or 'escape location'))
+        dest.x, dest.y, dest.z, hasReturnPoint and 'saved origin' or 'fallback location'))
 
     DoScreenFadeOut(300)
     Wait(300)

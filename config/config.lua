@@ -12,8 +12,7 @@ Config.Debug = false
 Config.Commands = {
     QuickFix  = 'sync',
     HardFix   = 'syncdeep',
-    MLOFix    = 'mlofix',   -- 残す（ただし suggestion には出さない）
-    Emergency = 'escape'
+    MLOFix    = 'mlofix'    -- 残す（ただし suggestion には出さない）
 }
 
 -- ========================================================
@@ -36,7 +35,6 @@ Config.Discord = {
         QuickFix  = 3447003,
         HardFix   = 15158332,
         MLOFix    = 10181046,
-        Emergency = 16776960,
         Teleport  = 5025616
     }
 }
@@ -56,6 +54,9 @@ Config.Discord = {
 Config.HardFix = {
     -- 待機場所（マップ外の上空）
     SafeCoords = vec4(12000.0, 12000.0, 2000.0, 0.0),
+
+    -- 元の場所の記録がないまま待機場所に取り残されたときの戻り先（レギオンスクエア）
+    FallbackLocation = vec4(200.04, -921.56, 29.50, 155.86),
 
     -- 戻れるようになるまでの最短待機秒数
     -- 元の場所の読み込みが消えきる前に戻ると効果が落ちるため（0 で無効）
@@ -82,21 +83,6 @@ Config.HardFix = {
     }
 }
 
-
--- 緊急脱出設定
-Config.Emergency = {
-    Enabled        = true,
-    EscapeLocation = vec4(200.04, -921.56, 29.50, 155.86),
-
-    Restrictions = {
-        BlockIfHandcuffed = true,
-        BlockIfDead       = true,
-        BlockIfInCombat   = true
-    },
-
-    Cooldown       = 60,
-    MaxUsesPerHour = 3
-}
 
 -- 基本使用制限
 Config.Limits = {
@@ -151,12 +137,6 @@ Config.Messages = {
         Start      = 'インテリア専用修正を開始',
         Processing = 'インテリアデータをリフレッシュ中...',
         Complete   = 'インテリア修正完了'
-    },
-    Emergency = {
-        Start   = '緊急脱出を実行',
-        Moving  = 'レギオンスクエアへ移動中...',
-        Complete= 'レギオンスクエアに安全に到着しました',
-        Blocked = 'この状況では緊急脱出を使用できません'
     },
     Teleport = {
         Start    = '移動を開始します...',
