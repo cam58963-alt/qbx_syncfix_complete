@@ -11,68 +11,100 @@ local isTeleporting = false
 local escortReattachTarget = nil  -- 被連行者の serverId（完了通知待ち）
 
 -- ========================================================
--- QBX metadata 取得ヘルパー
+-- プレイヤー状態の取得（キャッシュ済みデータを使う）
 -- ========================================================
 local function getPlayerMetadata()
-    local playerData = nil
-    if exports.qbx_core then
-        local ok, data = pcall(function()
-            return exports.qbx_core:GetPlayerData()
-        end)
-        if ok and data then playerData = data end
+    local data = GetCachedPlayerData()
+    return (data and data.metadata) or {}
+end
+
+
+local function isTruthyState(v)
+    return v == true or (type(v) == 'number' and v > 0)
+end
+
+-- 死亡・瀕死（qbx の metadata、wasabi_ambulance_v2 があればその状態も見る）
+local function isDeadOrDown(meta)
+    if meta.isdead or meta.inlaststand then return true end
+    -- 起動順に左右されないよう、確認のたびに状態を見る（呼ばれるのは操作したときだけ）
+    if GetResourceState('wasabi_ambulance_v2') == 'started' then
+        if isTruthyState(LocalPlayer.state.isDead) then return true end
+        local ok, dead = pcall(function() return exports['wasabi_ambulance_v2']:isPlayerDead() end)
+        if ok and dead then return true end
     end
-    if not playerData then
-        -- qb-core フォールバック
-        local ok, QBCore = pcall(function()
-            return exports['qb-core']:GetCoreObject()
-        end)
-        if ok and QBCore then
-            playerData = QBCore.Functions.GetPlayerData()
-        end
-    end
-    return playerData and playerData.metadata or {}
+    return false
 end
 
 -- ========================================================
 -- TP制限チェック（被連行者・手錠・死亡）
 -- ========================================================
-function CheckTeleportRestrictions()
+-- silent = true なら通知を出さない
+function CheckTeleportRestrictions(silent)
     local restrictions = Config.Teleports and Config.Teleports.Restrictions
     if not restrictions then return true end -- 制限設定なし → 許可
 
     local meta = getPlayerMetadata()
-
-    if restrictions.BlockIfEscorted and meta.isescorted then
-        ShowNotification('テレポート', Config.Messages.Teleport.BlockedEscorted, 'error')
+    local function block(msg)
+        if not silent then ShowNotification('テレポート', msg, 'error') end
         return false
+    end
+
+    if restrictions.BlockIfEscorted
+        and (meta.isescorted or LocalPlayer.state.isEscorted or LocalPlayer.state.isDragged) then
+        return block(Config.Messages.Teleport.BlockedEscorted)
     end
     if restrictions.BlockIfHandcuffed and meta.ishandcuffed then
-        ShowNotification('テレポート', Config.Messages.Teleport.BlockedHandcuffed, 'error')
-        return false
+        return block(Config.Messages.Teleport.BlockedHandcuffed)
     end
-    if restrictions.BlockIfDead and (meta.isdead or meta.inlaststand) then
-        ShowNotification('テレポート', Config.Messages.Teleport.BlockedDead, 'error')
-        return false
+    if restrictions.BlockIfDead and isDeadOrDown(meta) then
+        return block(Config.Messages.Teleport.BlockedDead)
     end
 
     return true
 end
 
 -- ========================================================
--- エスコート中の被連行者 ped を検出
+-- 一緒に移動させる相手（連行・搬送されている人）を探す
 -- ========================================================
--- qb-policejob: AttachEntityToEntity(target, dragger, 11816, ...)
--- 連行者の ped にアタッチされている他プレイヤー ped を探す
+-- 1) 自分にアタッチされているプレイヤー（qb/qbx policejob の連行など）
+-- 2) 2.5m 以内で、連行・搬送・手錠の状態になっているプレイヤー（wasabi の搬送など）
+-- 戻り値: player, ped, serverId, reattach（移動後に連行の形でアタッチし直すか）
+local TRANSPORT_STATES = { 'isEscorted', 'isCarried', 'isDragged', 'beingDragged', 'cuffed', 'isHandcuffed' }
+
+local function isBeingTransported(serverId)
+    local st = Player(serverId).state
+    for _, key in ipairs(TRANSPORT_STATES) do
+        if st[key] then return true end
+    end
+    return false
+end
+
 local function findEscortedPlayer(myPed)
+    local myCoords = GetEntityCoords(myPed)
+    local nearest, nearestDist = nil, 2.5
+
     for _, player in ipairs(GetActivePlayers()) do
         if player ~= PlayerId() then
             local targetPed = GetPlayerPed(player)
-            if DoesEntityExist(targetPed) and IsEntityAttachedToEntity(targetPed, myPed) then
-                return player, targetPed, GetPlayerServerId(player)
+            if DoesEntityExist(targetPed) then
+                local serverId = GetPlayerServerId(player)
+                if IsEntityAttachedToEntity(targetPed, myPed) then
+                    -- 担いで運ぶ搬送（isCarried）は連行の形でアタッチし直さない
+                    local reattach = not Player(serverId).state.isCarried
+                    return player, targetPed, serverId, reattach
+                end
+                local dist = #(myCoords - GetEntityCoords(targetPed))
+                if dist < nearestDist and isBeingTransported(serverId) then
+                    nearest, nearestDist = { player, targetPed, serverId }, dist
+                end
             end
         end
     end
-    return nil, nil, nil
+
+    if nearest then
+        return nearest[1], nearest[2], nearest[3], false
+    end
+    return nil, nil, nil, false
 end
 
 -- ========================================================
@@ -102,9 +134,9 @@ function PerformSafeTeleport(dest, pointLabel)
         local restrictions = cfg.Restrictions or {}
 
         -- エスコート同期: 自分にアタッチされている被連行者を検出
-        local escortedPlayer, escortedPed, escortedServerId = nil, nil, nil
+        local escortedPlayer, escortedPed, escortedServerId, escortReattach = nil, nil, nil, false
         if restrictions.EscortedPlayerSync then
-            escortedPlayer, escortedPed, escortedServerId = findEscortedPlayer(ped)
+            escortedPlayer, escortedPed, escortedServerId, escortReattach = findEscortedPlayer(ped)
         end
 
         -- ログ送信
@@ -238,7 +270,10 @@ function PerformSafeTeleport(dest, pointLabel)
                 streamWait = streamWait + 200
             end
 
-            if newEscortedPed and DoesEntityExist(newEscortedPed) then
+            if not escortReattach then
+                -- 担いで運ぶ搬送や、アタッチされていなかった相手はそのまま（搬送側で持ち直す）
+                ShowNotification('テレポート', Config.Messages.Teleport.EscortSynced, 'success')
+            elseif newEscortedPed and DoesEntityExist(newEscortedPed) then
                 -- qb-policejob と同じアタッチ: bone 11816
                 AttachEntityToEntity(newEscortedPed, ped, 11816,
                     0.45, 0.45, 0.0, 0.0, 0.0, 0.0,

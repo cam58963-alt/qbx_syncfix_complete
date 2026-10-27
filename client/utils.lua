@@ -68,29 +68,39 @@ end
 --   point.jobs = nil                      -- 制限なし
 -- ========================================================
 
+-- ========================================================
+-- プレイヤーデータのキャッシュ
+-- ========================================================
+-- exports.qbx_core:GetPlayerData() はリソースをまたいで PlayerData 全体をコピーするため、
+-- マーカー描画やターゲット判定のように毎フレーム呼ぶとカクつきの原因になる。
+-- 1 秒に 1 回だけ取り直して使い回す。
+local cachedPlayerData = nil
+local cachedAt         = -100000
+local CACHE_MS         = 1000
+
+function GetCachedPlayerData()
+    local now = GetGameTimer()
+    if now - cachedAt < CACHE_MS then return cachedPlayerData end
+    cachedAt = now
+
+    local ok, data = pcall(function() return exports.qbx_core:GetPlayerData() end)
+    if ok and data then
+        cachedPlayerData = data
+        return cachedPlayerData
+    end
+    -- qb-core フォールバック
+    local ok2, QBCore = pcall(function() return exports['qb-core']:GetCoreObject() end)
+    if ok2 and QBCore then
+        cachedPlayerData = QBCore.Functions.GetPlayerData()
+    end
+    return cachedPlayerData
+end
+
 --- プレイヤーの現在の job name を取得
 --- @return string jobName (取得失敗時は空文字)
 function GetPlayerJobName()
-    -- QBX (qbx_core) を優先
-    if exports.qbx_core then
-        local ok, data = pcall(function()
-            return exports.qbx_core:GetPlayerData()
-        end)
-        if ok and data and data.job and data.job.name then
-            return data.job.name
-        end
-    end
-    -- qb-core フォールバック
-    local ok, QBCore = pcall(function()
-        return exports['qb-core']:GetCoreObject()
-    end)
-    if ok and QBCore then
-        local pd = QBCore.Functions.GetPlayerData()
-        if pd and pd.job and pd.job.name then
-            return pd.job.name
-        end
-    end
-    return ''
+    local data = GetCachedPlayerData()
+    return (data and data.job and data.job.name) or ''
 end
 
 --- TPポイントの job 制限をチェック

@@ -8,7 +8,7 @@
 --   id          : 一意な識別子（文字列）
 --   label       : 表示名
 --   type        : 'target' = ox_target で表示 / 'marker' = マーカー+Eキー
---   origin      : テレポート開始地点の座標 (vec3/vec4)
+--   origin      : テレポート開始地点の座標 (vec3/vec4)。マーカー方式は地面の高さで指定（マーカーはこの高さに描かれる）
 --   radius      : 反応範囲（接近判定半径 / ターゲットゾーン半径）
 --   icon        : ox_target のアイコン名（type='target' 時のみ）
 --   marker      : マーカー設定（type='marker' 時のみ）
@@ -93,20 +93,20 @@ Config.Teleports = {
             id     = 'EMS_Elevator_Hospital1F',
             label  = '石川病院1F',
             type   = 'marker',
-            origin = vec3(1140.97, -1568.37, 35.50),
+            origin = vec3(1140.97, -1568.37, 34.03),
             radius = 1.2,
-            jobs   = {'ambulance'},
+            jobs   = {'ambulance','admin'},
             marker = {
                 type      = 1,
                 color     = {r = 50, g = 150, b = 250, a = 120},
-                size      = {x = 0.8, y = 0.8, z = 0.5},
+                size      = {x = 0.8, y = 0.8, z = 1.0},
                 bobUpDown = false
             },
             destinations = {
-                { label = '石川病院2F',             coords = vec4(1140.95, -1568.24, 40.00, 358.56), isMlo = true },
-                { label = '霧科クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.7, 230.64), isMlo = true },
-                { label = '霧科クリニック1F',         coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
-                { label = '霧科クリニックB1F',        coords = vec4(-249.61, 6323.41, 29.73, 131.82), isMlo = true }
+                { label = '石川病院2F',             coords = vec4(1140.95, -1568.24, 39.50, 358.56), isMlo = true },
+                { label = '朝霧クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.8, 230.64), isMlo = true },
+                { label = '朝霧クリニック1F',         coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
+                { label = '朝霧クリニックB1F',        coords = vec4(-249.61, 6323.41, 29.23, 131.82), isMlo = true }
             }
         },
 
@@ -114,83 +114,106 @@ Config.Teleports = {
             id     = 'EMS_Elevator_Hospital2F',
             label  = '石川病院2F',
             type   = 'marker',
-            origin = vec3(1140.92, -1568.28, 39.5),
+            origin = vec3(1140.92, -1568.28, 38.5),
             radius = 1.2,
-            jobs   = {'ambulance'},
+            jobs   = {'ambulance','admin'},
             marker = {
                 type      = 1,
                 color     = {r = 50, g = 150, b = 250, a = 120},
-                size      = {x = 0.8, y = 0.8, z = 0.5},
+                size      = {x = 0.8, y = 0.8, z = 1.0},
                 bobUpDown = false
             },
             destinations = {
-                { label = '石川病院1F',             coords = vec4(1140.87, -1568.63, 36.00, 357.3),  isMlo = true },
-                { label = '霧科クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.7, 230.64), isMlo = true },
-                { label = '霧科クリニック1F',         coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
-                { label = '霧科クリニックB1F',        coords = vec4(-249.61, 6323.41, 29.73, 131.82), isMlo = true }
+                { label = '石川病院1F',             coords = vec4(1140.87, -1568.63, 35.00, 357.3),  isMlo = true },
+                { label = '朝霧クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.8, 230.64), isMlo = true },
+                { label = '朝霧クリニック1F',         coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
+                { label = '朝霧クリニックB1F',        coords = vec4(-249.61, 6323.41, 29.23, 131.82), isMlo = true }
             }
         },
 
         {
             id     = 'EMS_Elevator_ClinicHeli',
-            label  = '霧科クリニックヘリポート',
+            label  = '朝霧クリニックヘリポート',
             type   = 'marker',
-            origin = vec3(-251.24, 6324.78, 37.7),
+            origin = vec3(-251.24, 6324.78, 36.64),
             radius = 1.2,
-            jobs   = {'ambulance'},
+            jobs   = {'ambulance','admin'},
             marker = {
                 type      = 1,
                 color     = {r = 50, g = 150, b = 250, a = 120},
-                size      = {x = 0.8, y = 0.8, z = 0.5},
+                size      = {x = 0.8, y = 0.8, z = 1.0},
                 bobUpDown = false
             },
             destinations = {
-                { label = '石川病院1F',       coords = vec4(1140.87, -1568.63, 36.00, 357.3),  isMlo = true },
-                { label = '石川病院2F',       coords = vec4(1140.95, -1568.24, 40.0, 358.56),  isMlo = true },
-                { label = '霧科クリニック1F',  coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
-                { label = '霧科クリニックB1F', coords = vec4(-249.61, 6323.41, 29.73, 131.82), isMlo = true }
+                { label = '石川病院1F',       coords = vec4(1140.87, -1568.63, 35.00, 357.3),  isMlo = true },
+                { label = '石川病院2F',       coords = vec4(1140.95, -1568.24, 39.50, 358.56),  isMlo = true },
+                { label = '朝霧クリニック1F',  coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
+                { label = '朝霧クリニックB1F', coords = vec4(-249.61, 6323.41, 29.23, 131.82), isMlo = true }
             }
         },
 
         {
             id     = 'EMS_Elevator_Clinic1F',
-            label  = '霧科クリニック1F',
+            label  = '朝霧クリニック1F',
             type   = 'marker',
-            origin = vec3(-251.72, 6324.52, 32.43),
+            origin = vec3(-251.72, 6324.52, 31.43),
             radius = 1.2,
-            jobs   = {'ambulance'},
+            jobs   = {'ambulance','admin'},
             marker = {
                 type      = 1,
                 color     = {r = 50, g = 150, b = 250, a = 120},
-                size      = {x = 0.8, y = 0.8, z = 0.5},
+                size      = {x = 0.8, y = 0.8, z = 1.0},
                 bobUpDown = false
             },
             destinations = {
-                { label = '石川病院1F',             coords = vec4(1140.87, -1568.63, 36.00, 357.3),  isMlo = true },
-                { label = '石川病院2F',             coords = vec4(1140.95, -1568.24, 40.0, 358.56),  isMlo = true },
-                { label = '霧科クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.7, 230.64), isMlo = true },
-                { label = '霧科クリニックB1F',        coords = vec4(-249.61, 6323.41, 29.73, 131.82), isMlo = true }
+                { label = '石川病院1F',             coords = vec4(1140.87, -1568.63, 35.00, 357.3),  isMlo = true },
+                { label = '石川病院2F',             coords = vec4(1140.95, -1568.24, 39.50, 358.56),  isMlo = true },
+                { label = '朝霧クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.8, 230.64), isMlo = true },
+                { label = '朝霧クリニックB1F',        coords = vec4(-249.61, 6323.41, 29.23, 131.82), isMlo = true }
             }
         },
 
         {
             id     = 'EMS_Elevator_ClinicB1F',
-            label  = '霧科クリニックB1F',
+            label  = '朝霧クリニックB1F',
             type   = 'marker',
-            origin = vec3(-249.61, 6323.41, 29.73),
+            origin = vec3(-249.61, 6323.41, 28.23),
             radius = 1.2,
-            jobs   = {'ambulance'},
+            jobs   = {'ambulance','admin'},
             marker = {
                 type      = 1,
                 color     = {r = 50, g = 150, b = 250, a = 120},
-                size      = {x = 0.8, y = 0.8, z = 0.5},
+                size      = {x = 0.8, y = 0.8, z = 1.0},
                 bobUpDown = false
             },
             destinations = {
-                { label = '石川病院1F',             coords = vec4(1140.87, -1568.63, 36.00, 357.3),  isMlo = true },
+                { label = '石川病院1F',             coords = vec4(1140.87, -1568.63, 35.00, 357.3),  isMlo = true },
                 { label = '石川病院2F',             coords = vec4(1140.95, -1568.24, 39.5, 358.56),  isMlo = true },
-                { label = '霧科クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.7, 230.64), isMlo = true },
-                { label = '霧科クリニック1F',         coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
+                { label = '朝霧クリニックヘリポート', coords = vec4(-251.24, 6324.78, 37.8, 230.64), isMlo = true },
+                { label = '朝霧クリニック1F',         coords = vec4(-251.72, 6324.52, 32.43, 312.15), isMlo = true },
+            }
+        },
+
+        -- ============================================
+        -- PD テレポーター（マーカー方式 / 即TP）
+        -- ★ jobs   = {'police'}, → police職のみ使用可
+        -- ============================================
+
+        {
+            id     = 'EMS_to_PD',
+            label  = '本書へ',
+            type   = 'marker',
+            origin = vec3(1135.82, -1538.55, 34.03),
+            radius = 1.2,
+            jobs   = {'police','admin'},
+            marker = {
+                type      = 1,
+                color     = {r = 50, g = 150, b = 250, a = 120},
+                size      = {x = 0.8, y = 0.8, z = 1.0},
+                bobUpDown = false
+            },
+            destinations = {
+                { label = 'PDへ',             coords = vec4(-1060.92, -837.08, 5.00, 213.26), isMlo = true },
             }
         },
 
