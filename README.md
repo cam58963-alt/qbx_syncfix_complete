@@ -58,6 +58,7 @@ qbx_syncfix_complete/
 - **1回目**: マップ外の待機場所へ移動し、元の場所を記録します（待機時間の上限は `Config.HardFix.MaxStay`）
 - **2回目**: 元の場所へ戻り、記録を削除します（1回目から `Config.HardFix.MinStay` 秒たつまでは戻れません）
 - `Config.HardFix.Shell` にシェルのモデルを設定すると、待機中はシェルの中を自由に歩けます。未設定のときは空中でフリーズして待機します
+- シェル内の立ち位置は、待機中に立ちたい場所で `/syncshelloffset` を入力すると F8 に `spawnOffset` の値が出ます
 - 待機中は `/sync`・`/mlofix` は使えません
 
 3層隔離方式による強力な同期リセット:
