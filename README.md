@@ -88,6 +88,7 @@ TP時に `EnsureMloLoadedAtCoords` で3段階MLOプリロードを自動実行�
 
 ### 一緒に移動する相手
 - 自分にアタッチされているプレイヤー（警察の連行など）。移動後に連行の形でアタッチし直します
+- 自分が持っているストレッチャーに乗っているプレイヤー（[escort_vehicle](https://github.com/cam58963-alt/escort_vehicle)）。移動後、escort_vehicle の機能でストレッチャーに乗せ直します
 - 2.5m 以内で、連行・搬送・手錠の状態（`isEscorted` / `isCarried` / `isDragged` / `beingDragged` / `cuffed` / `isHandcuffed`）のプレイヤー。担いで運ぶ搬送はアタッチし直さないので、移動後に持ち直してください
 - サーバー側で、相手が近くにいて連行・搬送の状態か、行き先が設定済みのポイントかを確認します
 
@@ -260,7 +261,7 @@ exports.qbx_syncfix_complete:IsAreaLocked(coords)     -- 任意座標で判定
 
 ## バージョン履歴
 
-- **v3.7.0** - `qbx_teleport` を統合（ポイント設定・搬送中の相手と一緒に移動・wasabi の死亡判定）、テレポートを軽量化（lib.points・プレイヤーデータのキャッシュ）、連行同期の行き先と相手をサーバー側で検証、待機用シェルに `k4_container_shell` を設定、`/syncshelloffset` を追加
+- **v3.7.0** - `qbx_teleport` を統合（ポイント設定・搬送中の相手と一緒に移動・wasabi の死亡判定）、escort_vehicle のストレッチャー搬送に対応、テレポートを軽量化（lib.points・プレイヤーデータのキャッシュ）、連行同期の行き先と相手をサーバー側で検証、待機用シェルに `k4_container_shell` を設定、`/syncshelloffset` を追加
 - **v3.6.0** - `/escape` を削除、`/sync` を自分の画面だけで完結する方式に変更（全員への同期パルス・周辺車両の操作権取得を廃止）、`/mlofix` を車両内で使えないようにした
 - **v3.5.0** - `/syncdeep` を2回使う方式に変更（固定カウントダウン廃止）、待機用シェル対応、バケット脱出の悪用穴を修正、HardFix中の切断でマップ外に出現する問題を修正、車両内HardFixを禁止、自動MLO補助後のフォーカス残りを修正
 - **v3.1.0** - テレポートモジュール追加、Interior保護機構、Discord日本語化、TP設定分離、vec統一

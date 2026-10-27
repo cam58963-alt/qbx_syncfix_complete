@@ -174,7 +174,14 @@ local function findEscortDestination(src, Player, coords)
     return nil
 end
 
-local function isTransported(targetId, TargetPlayer)
+local function isTransported(src, targetId, TargetPlayer)
+    -- アタッチの確認: 連行者に直接、または連行者が持っている物（ストレッチャー等）経由
+    local srcPed    = GetPlayerPed(src)
+    local parent    = GetEntityAttachedTo(GetPlayerPed(targetId))
+    if parent ~= 0 and (parent == srcPed or GetEntityAttachedTo(parent) == srcPed) then
+        return true
+    end
+
     local st = Player(targetId).state
     for _, key in ipairs(TRANSPORT_STATES) do
         if st[key] then return true end
@@ -213,7 +220,7 @@ RegisterNetEvent('syncfix:escortTeleportSync', function(targetServerId, coords, 
     end
 
     -- 連行・搬送の状態の検証
-    if not isTransported(targetId, TargetPlayer) then
+    if not isTransported(src, targetId, TargetPlayer) then
         print(string.format('[SyncFix] escortTeleportSync: target %d is NOT escorted/carried, rejecting', targetId))
         return
     end

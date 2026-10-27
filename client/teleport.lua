@@ -67,8 +67,10 @@ end
 -- 一緒に移動させる相手（連行・搬送されている人）を探す
 -- ========================================================
 -- 1) 自分にアタッチされているプレイヤー（qb/qbx policejob の連行など）
--- 2) 2.5m 以内で、連行・搬送・手錠の状態になっているプレイヤー（wasabi の搬送など）
--- 戻り値: player, ped, serverId, reattach（移動後に連行の形でアタッチし直すか）
+-- 2) 自分にアタッチされている物（ストレッチャーなど）に乗っているプレイヤー（escort_vehicle の搬送）
+-- 3) 2.5m 以内で、連行・搬送・手錠の状態になっているプレイヤー（wasabi の搬送など）
+-- 戻り値: player, ped, serverId, reattach（移動後に連行の形でアタッチし直すか）,
+--         carrier（2 のときの乗せ物。移動後にそこへ乗せ直す）
 local TRANSPORT_STATES = { 'isEscorted', 'isCarried', 'isDragged', 'beingDragged', 'cuffed', 'isHandcuffed' }
 
 local function isBeingTransported(serverId)
@@ -91,7 +93,13 @@ local function findEscortedPlayer(myPed)
                 if IsEntityAttachedToEntity(targetPed, myPed) then
                     -- 担いで運ぶ搬送（isCarried）は連行の形でアタッチし直さない
                     local reattach = not Player(serverId).state.isCarried
-                    return player, targetPed, serverId, reattach
+                    return player, targetPed, serverId, reattach, nil
+                end
+                -- ストレッチャー経由（患者 → ストレッチャー → 自分）
+                local parent = GetEntityAttachedTo(targetPed)
+                if parent ~= 0 and parent ~= myPed and DoesEntityExist(parent)
+                    and IsEntityAttachedToEntity(parent, myPed) then
+                    return player, targetPed, serverId, false, parent
                 end
                 local dist = #(myCoords - GetEntityCoords(targetPed))
                 if dist < nearestDist and isBeingTransported(serverId) then
@@ -102,9 +110,20 @@ local function findEscortedPlayer(myPed)
     end
 
     if nearest then
-        return nearest[1], nearest[2], nearest[3], false
+        return nearest[1], nearest[2], nearest[3], false, nil
     end
-    return nil, nil, nil, false
+    return nil, nil, nil, false, nil
+end
+
+-- 移動後、患者をストレッチャーに乗せ直す（escort_vehicle 連携）
+-- ストレッチャーは自分にアタッチされているので一緒に移動している。
+-- escort_vehicle のサーバーイベントが権限（勤務中のEMS）を確認して患者側で乗せ直す。
+local function replaceOnCarrier(carrier, serverId)
+    if not carrier or not DoesEntityExist(carrier) then return false end
+    if GetResourceState('escort_vehicle') ~= 'started' then return false end
+    if not NetworkGetEntityIsNetworked(carrier) then return false end
+    TriggerServerEvent('escort_vehicle:server:placeOnStretcher', serverId, ObjToNet(carrier))
+    return true
 end
 
 -- ========================================================
@@ -134,9 +153,9 @@ function PerformSafeTeleport(dest, pointLabel)
         local restrictions = cfg.Restrictions or {}
 
         -- エスコート同期: 自分にアタッチされている被連行者を検出
-        local escortedPlayer, escortedPed, escortedServerId, escortReattach = nil, nil, nil, false
+        local escortedPlayer, escortedPed, escortedServerId, escortReattach, escortCarrier = nil, nil, nil, false, nil
         if restrictions.EscortedPlayerSync then
-            escortedPlayer, escortedPed, escortedServerId, escortReattach = findEscortedPlayer(ped)
+            escortedPlayer, escortedPed, escortedServerId, escortReattach, escortCarrier = findEscortedPlayer(ped)
         end
 
         -- ログ送信
@@ -270,7 +289,13 @@ function PerformSafeTeleport(dest, pointLabel)
                 streamWait = streamWait + 200
             end
 
-            if not escortReattach then
+            if escortCarrier then
+                -- ストレッチャーに乗せ直す
+                if replaceOnCarrier(escortCarrier, escortedServerId) then
+                    print(string.format('^2[SyncFix] ^7Patient re-placed on stretcher after TP (target serverId: %d)', escortedServerId))
+                end
+                ShowNotification('テレポート', Config.Messages.Teleport.EscortSynced, 'success')
+            elseif not escortReattach then
                 -- 担いで運ぶ搬送や、アタッチされていなかった相手はそのまま（搬送側で持ち直す）
                 ShowNotification('テレポート', Config.Messages.Teleport.EscortSynced, 'success')
             elseif newEscortedPed and DoesEntityExist(newEscortedPed) then
