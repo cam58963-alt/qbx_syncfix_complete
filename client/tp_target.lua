@@ -34,9 +34,10 @@ CreateThread(function()
                         label    = point.label or '移動する',
                         icon     = point.icon or 'fa-solid fa-door-open',
                         distance = point.radius or 1.5,
+                        -- ox_target は狙っている間ずっと毎フレーム呼ぶので軽い確認だけにする
+                        -- （手錠・死亡などの確認は選んだときに OpenTeleportMenu で行う）
                         canInteract = function()
                             return not IsTeleporting() and not IsFixProcessing
-                                and CheckTeleportRestrictions()
                                 and CheckJobRestriction(point, true)
                         end,
                         onSelect = function()

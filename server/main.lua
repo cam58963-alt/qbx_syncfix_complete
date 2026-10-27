@@ -134,7 +134,62 @@ end)
 -- ========================================================
 -- エスコート同期テレポート（連行者 → サーバー → 被連行者）
 -- ========================================================
--- 連行者がTPしたとき、被連行者のクライアントにTP指示を中継する
+-- 連行者がTPしたとき、被連行者のクライアントにTP指示を中継する。
+-- クライアントから届く座標・相手IDはそのまま信用しない:
+--   ・行き先は「連行者が今いるポイントの行き先」だけ（座標はサーバーの設定値を使う）
+--   ・相手は連行者の近くにいて、連行・搬送・手錠の状態であること
+local ESCORT_ORIGIN_MARGIN = 5.0   -- 移動元から離れていてもよい距離（通信の遅れの余裕）
+local ESCORT_MAX_DIST      = 8.0   -- 連行者と相手の最大距離
+local TRANSPORT_STATES     = { 'isEscorted', 'isCarried', 'isDragged', 'beingDragged', 'cuffed', 'isHandcuffed' }
+
+local function toVec3(c)
+    return vector3(c.x + 0.0, c.y + 0.0, c.z + 0.0)
+end
+
+local function hasJob(Player, jobList)
+    if not jobList or #jobList == 0 then return true end
+    local jobName = Player.PlayerData.job and Player.PlayerData.job.name
+    for _, job in ipairs(jobList) do
+        if job == jobName then return true end
+    end
+    return false
+end
+
+-- 連行者の現在地から行ける、設定済みの行き先を探す
+local function findEscortDestination(src, Player, coords)
+    if not tonumber(coords.x) or not tonumber(coords.y) or not tonumber(coords.z) then return nil end
+    local tp = Config.Teleports
+    if not tp or not tp.Points then return nil end
+
+    local pedCoords = GetEntityCoords(GetPlayerPed(src))
+    local requested = toVec3(coords)
+    for _, point in ipairs(tp.Points) do
+        local nearOrigin = #(pedCoords - toVec3(point.origin)) <= (point.radius or 1.5) + ESCORT_ORIGIN_MARGIN
+        if nearOrigin and hasJob(Player, point.jobs) then
+            for _, dest in ipairs(point.destinations or {}) do
+                if #(requested - toVec3(dest.coords)) < 1.0 then return dest end
+            end
+        end
+    end
+    return nil
+end
+
+local function isTransported(src, targetId, TargetPlayer)
+    -- アタッチの確認: 連行者に直接、または連行者が持っている物（ストレッチャー等）経由
+    local srcPed    = GetPlayerPed(src)
+    local parent    = GetEntityAttachedTo(GetPlayerPed(targetId))
+    if parent ~= 0 and (parent == srcPed or GetEntityAttachedTo(parent) == srcPed) then
+        return true
+    end
+
+    local st = Player(targetId).state
+    for _, key in ipairs(TRANSPORT_STATES) do
+        if st[key] then return true end
+    end
+    local meta = TargetPlayer.PlayerData.metadata
+    return meta and (meta.isescorted or meta.ishandcuffed) or false
+end
+
 RegisterNetEvent('syncfix:escortTeleportSync', function(targetServerId, coords, isMlo)
     local src    = source
     local Player = exports.qbx_core:GetPlayer(src)
@@ -149,7 +204,7 @@ RegisterNetEvent('syncfix:escortTeleportSync', function(targetServerId, coords, 
 
     -- ターゲット検証
     local targetId = tonumber(targetServerId)
-    if not targetId then return end
+    if not targetId or targetId == src then return end
 
     local TargetPlayer = exports.qbx_core:GetPlayer(targetId)
     if not TargetPlayer then
@@ -157,26 +212,35 @@ RegisterNetEvent('syncfix:escortTeleportSync', function(targetServerId, coords, 
         return
     end
 
-    -- エスコート関係の検証（被連行者が実際にエスコート状態か確認）
-    local targetMeta = TargetPlayer.PlayerData.metadata
-    if not targetMeta or not targetMeta.isescorted then
-        print(string.format('[SyncFix] escortTeleportSync: target %d is NOT escorted, rejecting', targetId))
+    -- 距離の検証（連行者の近くにいるか）
+    local dist = #(GetEntityCoords(GetPlayerPed(src)) - GetEntityCoords(GetPlayerPed(targetId)))
+    if dist > ESCORT_MAX_DIST then
+        print(string.format('[SyncFix] escortTeleportSync: target %d is too far from %d (%.1fm), rejecting', targetId, src, dist))
         return
     end
 
-    -- 座標検証
-    if type(coords) ~= 'table' or not coords.x or not coords.y or not coords.z then
-        print(string.format('[SyncFix] escortTeleportSync: invalid coords from %d', src))
+    -- 連行・搬送の状態の検証
+    if not isTransported(src, targetId, TargetPlayer) then
+        print(string.format('[SyncFix] escortTeleportSync: target %d is NOT escorted/carried, rejecting', targetId))
         return
     end
+
+    -- 行き先の検証（設定済みの行き先だけ・座標はサーバーの設定値を使う）
+    if type(coords) ~= 'table' and type(coords) ~= 'vector3' and type(coords) ~= 'vector4' then return end
+    local dest = findEscortDestination(src, Player, coords)
+    if not dest then
+        print(string.format('[SyncFix] escortTeleportSync: destination from %d is not a configured teleport, rejecting', src))
+        return
+    end
+    local destCoords = { x = dest.coords.x, y = dest.coords.y, z = dest.coords.z, w = dest.coords.w or 0.0 }
 
     -- 被連行者のクライアントにTP指示を転送（draggerServerId を追加で送信）
-    TriggerClientEvent('syncfix:escortTeleportReceive', targetId, coords, isMlo, src)
+    TriggerClientEvent('syncfix:escortTeleportReceive', targetId, destCoords, dest.isMlo or false, src)
 
     local srcName  = Player.PlayerData.charinfo.firstname .. ' ' .. Player.PlayerData.charinfo.lastname
     local tgtName  = TargetPlayer.PlayerData.charinfo.firstname .. ' ' .. TargetPlayer.PlayerData.charinfo.lastname
     print(string.format('[SyncFix] Escort TP sync: %s (ID:%d) → %s (ID:%d) to (%.1f, %.1f, %.1f)',
-        srcName, src, tgtName, targetId, coords.x, coords.y, coords.z))
+        srcName, src, tgtName, targetId, destCoords.x, destCoords.y, destCoords.z))
 end)
 
 -- 被連行者のTP完了通知 → 連行者に中継

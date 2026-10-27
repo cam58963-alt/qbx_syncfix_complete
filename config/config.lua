@@ -70,9 +70,11 @@ Config.HardFix = {
     --   model を設定すると、SafeCoords にシェルを出して中へ送る（待機中は自由に歩ける）
     --   未設定、またはモデルが見つからないときは空中でフリーズして待機する
     --   spawnOffset: シェルの中心からの立ち位置（x, y, z, 向き）。シェルごとに調整が必要
+    --   立ち位置の測り方: 待機中にシェルの中で立ちたい場所へ歩き、/syncshelloffset を入力
+    --   → F8 に表示された spawnOffset の行をここに貼る
     Shell = {
-        model       = nil,   -- 例: 'shell_example'
-        spawnOffset = vec4(0.0, 0.0, 0.0, 0.0)
+        model       = 'k4_container_shell',
+        spawnOffset = vec4(0.0, 0.0, 1.25, 0.0)   -- 仮の値（シェル中央・床の少し上）
     },
 
     -- 待機中の画面表示

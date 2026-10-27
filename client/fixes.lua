@@ -37,13 +37,23 @@ local function spawnShell(hash, safe)
     if not HasModelLoaded(hash) then return nil end
 
     -- isNetwork = false: 自分の画面にだけ出す（他プレイヤーには見えない）
-    local obj = CreateObject(hash, safe.x, safe.y, safe.z, false, false, false)
+    -- NoOffset: モデルの原点をそのまま座標に置く（ハウジング系スクリプトのシェル配置と同じ）
+    local obj = CreateObjectNoOffset(hash, safe.x, safe.y, safe.z, false, false, false)
     SetModelAsNoLongerNeeded(hash)
     if not obj or obj == 0 then return nil end
 
     SetEntityHeading(obj, safe.w)
     FreezeEntityPosition(obj, true)
     return obj
+end
+
+-- シェル内の現在位置を spawnOffset の形で返す（立ち位置の調整用）
+function GetHardFixShellOffset()
+    if not (HardFixWaiting and hardFixShell and DoesEntityExist(hardFixShell)) then return nil end
+    local ped = PlayerPedId()
+    local off = GetOffsetFromEntityGivenWorldCoords(hardFixShell, GetEntityCoords(ped))
+    local h   = (GetEntityHeading(ped) - GetEntityHeading(hardFixShell)) % 360.0
+    return vec4(off.x, off.y, off.z, h)
 end
 
 local function deleteShell()

@@ -136,6 +136,18 @@ RegisterCommand(Config.Commands.QuickFix,  cmdSync,     false)
 RegisterCommand(Config.Commands.HardFix,   cmdSyncDeep, false)
 RegisterCommand(Config.Commands.MLOFix,    cmdMloFix,   false)
 
+-- シェル内の立ち位置を測る（Config.HardFix.Shell.spawnOffset の調整用・候補には出さない）
+RegisterCommand('syncshelloffset', function()
+    local off = GetHardFixShellOffset()
+    if not off then
+        ShowNotification('シェル', '/' .. Config.Commands.HardFix .. ' でシェルの中にいるときだけ使えます', 'error')
+        return
+    end
+    local line = string.format('spawnOffset = vec4(%.2f, %.2f, %.2f, %.1f)', off.x, off.y, off.z, off.w)
+    print('[SyncFix] ' .. line)
+    ShowNotification('シェル', line .. '\n（F8にも表示しました）', 'info', 10000)
+end, false)
+
 -- 互換コマンド
 RegisterCommand('quickreload', cmdSync,     false)
 RegisterCommand('hardfix',     cmdSyncDeep, false)

@@ -58,6 +58,7 @@ qbx_syncfix_complete/
 - **1回目**: マップ外の待機場所へ移動し、元の場所を記録します（待機時間の上限は `Config.HardFix.MaxStay`）
 - **2回目**: 元の場所へ戻り、記録を削除します（1回目から `Config.HardFix.MinStay` 秒たつまでは戻れません）
 - `Config.HardFix.Shell` にシェルのモデルを設定すると、待機中はシェルの中を自由に歩けます。未設定のときは空中でフリーズして待機します
+- シェル内の立ち位置は、待機中に立ちたい場所で `/syncshelloffset` を入力すると F8 に `spawnOffset` の値が出ます
 - 待機中は `/sync`・`/mlofix` は使えません
 
 3層隔離方式による強力な同期リセット:
@@ -76,7 +77,20 @@ qbx_syncfix_complete/
 
 MLO読込不具合の**予防**として、SyncFixスクリプト内でテレポートを管理します。  
 TP時に `EnsureMloLoadedAtCoords` で3段階MLOプリロードを自動実行するため、  
-移動先のMLOが透明になる問題を防止します。
+移動先のMLOが透明になる問題を防止します。  
+旧 `qbx_teleport` の機能（ポイント設定・連行/搬送中の相手と一緒に移動・wasabi_ambulance_v2 の死亡判定）はこちらに統合済みです。`qbx_teleport` は併用せず、停止してください。
+
+### 負荷対策
+- マーカーは `lib.points` で、近くのポイントだけが動きます（描画距離 10m）
+- ジョブ・状態の確認は、1秒に1回取り直したプレイヤーデータを使い回します（毎フレーム `GetPlayerData` を呼ばない）
+- テキストUIは表示・非表示が切り替わるときだけ送ります
+- ox_target の `canInteract` はジョブ確認だけにして、手錠・死亡などの確認は選んだときに行います
+
+### 一緒に移動する相手
+- 自分にアタッチされているプレイヤー（警察の連行など）。移動後に連行の形でアタッチし直します
+- 自分が持っているストレッチャーに乗っているプレイヤー（[escort_vehicle](https://github.com/cam58963-alt/escort_vehicle)）。移動後、escort_vehicle の機能でストレッチャーに乗せ直します
+- 2.5m 以内で、連行・搬送・手錠の状態（`isEscorted` / `isCarried` / `isDragged` / `beingDragged` / `cuffed` / `isHandcuffed`）のプレイヤー。担いで運ぶ搬送はアタッチし直さないので、移動後に持ち直してください
+- サーバー側で、相手が近くにいて連行・搬送の状態か、行き先が設定済みのポイントかを確認します
 
 ### 処理フロー（7フェーズ）
 ```
@@ -95,7 +109,7 @@ TP時に `EnsureMloLoadedAtCoords` で3段階MLOプリロードを自動実行�
 | パターン | 方式 | 設定 |
 |----------|------|------|
 | ターゲット | ox_target SphereZone | `type = 'target'` |
-| マーカー+Eキー | DrawMarker + Eキー | `type = 'marker'` |
+| マーカー+Eキー | lib.points + DrawMarker + Eキー（origin は地面の高さ） | `type = 'marker'` |
 | 移動先1件 | 即テレポート | `destinations` が1要素 |
 | 移動先複数 | ox_lib メニュー表示 | `destinations` が2要素以上 |
 
@@ -184,6 +198,7 @@ Config.ProtectedInteriors = {
 - [qbx_core](https://github.com/Qbox-project/qbx_core)
 - [ox_lib](https://github.com/overextended/ox_lib)
 - [ox_target](https://github.com/overextended/ox_target)（テレポートのtarget方式に必要。なくても動作）
+- `wasabi_ambulance_v2`（任意。あれば死亡・瀕死の判定に使う）
 
 ## インストール
 
@@ -246,6 +261,7 @@ exports.qbx_syncfix_complete:IsAreaLocked(coords)     -- 任意座標で判定
 
 ## バージョン履歴
 
+- **v3.7.0** - `qbx_teleport` を統合（ポイント設定・搬送中の相手と一緒に移動・wasabi の死亡判定）、escort_vehicle のストレッチャー搬送に対応、テレポートを軽量化（lib.points・プレイヤーデータのキャッシュ）、連行同期の行き先と相手をサーバー側で検証、待機用シェルに `k4_container_shell` を設定、`/syncshelloffset` を追加
 - **v3.6.0** - `/escape` を削除、`/sync` を自分の画面だけで完結する方式に変更（全員への同期パルス・周辺車両の操作権取得を廃止）、`/mlofix` を車両内で使えないようにした
 - **v3.5.0** - `/syncdeep` を2回使う方式に変更（固定カウントダウン廃止）、待機用シェル対応、バケット脱出の悪用穴を修正、HardFix中の切断でマップ外に出現する問題を修正、車両内HardFixを禁止、自動MLO補助後のフォーカス残りを修正
 - **v3.1.0** - テレポートモジュール追加、Interior保護機構、Discord日本語化、TP設定分離、vec統一
