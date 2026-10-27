@@ -177,8 +177,9 @@ function PerformSafeTeleport(dest, pointLabel)
         -- フェーズ1.5: エスコート同期 - サーバー経由で被連行者にTP通知
         if escortedServerId then
             ShowNotification('テレポート', Config.Messages.Teleport.EscortSync, 'info', 2000)
-            -- 被連行者を一旦デタッチ（座標移動のため）
-            DetachEntity(escortedPed, true, false)
+            -- ここではデタッチしない。サーバーはアタッチを連行・搬送の証拠として確認するため、
+            -- 先に外すと確認に落ちて相手が置いていかれる。デタッチは相手側
+            -- （syncfix:escortTeleportReceive）が自分で行う。
             -- サーバー経由で被連行者のクライアントにTP指示
             TriggerServerEvent('syncfix:escortTeleportSync', escortedServerId, {
                 x = dest.coords.x,
